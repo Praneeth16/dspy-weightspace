@@ -1,0 +1,42 @@
+{
+  "rows": {
+    "base, T=0.6 (blog sampling)": {
+      "accuracy": 0.16666666666666666,
+      "cut_rate": 0.9791666666666666,
+      "loop_rate": 0.625,
+      "mean_tokens": 4026.9375,
+      "score": 0.18541666666666665,
+      "n": 48
+    },
+    "base, T=1.0 (Qwen card)": {
+      "accuracy": 0.08333333333333333,
+      "cut_rate": 1.0,
+      "loop_rate": 0.0,
+      "mean_tokens": 4096,
+      "score": 0.3333333333333333,
+      "n": 48
+    },
+    "published Exp-8 edit (131k weights)": {
+      "accuracy": 0.2708333333333333,
+      "cut_rate": 0.8958333333333334,
+      "loop_rate": 0.1875,
+      "mean_tokens": 3845.3958333333335,
+      "score": 0.3833333333333333,
+      "n": 48
+    },
+    "optimizer-found edit": {
+      "accuracy": 0.16666666666666666,
+      "cut_rate": 0.9791666666666666,
+      "loop_rate": 0.625,
+      "mean_tokens": 4026.9375,
+      "score": 0.18541666666666665,
+      "n": 48
+    }
+  },
+  "weights_changed": 0,
+  "edited_tensors": [],
+  "wall_seconds": 7309.812534570694,
+  "gepa_candidates": 1,
+  "run_dir": "/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514",
+  "mlflow_run_id": "c7a5f83552e24f9bba23a447d10abdb1"
+}

@@ -49,7 +49,22 @@ https://github.com/Praneeth16/dspy-weightspace
 
 Results at notebook budget (GSM8K subset, 2k tokens, 8 passes per round), holdout n=48:
 
-__RESULTS_TABLE__
+| Variant | Accuracy | Looping | Cut at limit | Mean tokens | n |
+|---|---|---|---|---|---|
+| base, T=0.6 (blog sampling) | 16.7% | 62.5% | 97.9% | 4027 | 48 |
+| base, T=1.0 (Qwen model card) | 8.3% | 0.0% | 100.0% | 4096 | 48 |
+| published Experiment-8 edit (131k weights, sha256-verified) | 27.1% | 18.8% | 89.6% | 3845 | 48 |
+| optimizer, cold start (Claude Sonnet 5.5, 4 rounds x 4 passes) | no edit submitted | | | | |
+| optimizer, warm start from the published edit (6 passes/round) | running | | | | |
+
+Run: Databricks AI Runtime, one A10 (24 GB), Qwen3.5-0.8B bf16, GSM8K holdout n=48, thinking on, 4,096 new tokens,
+T=0.6 / top_p 0.95 / top_k 20, seed 0. "Looping" = distinct 8-gram ratio over the tail below 0.6. One 48-problem pass took
+about 9 minutes with the reference Gated DeltaNet kernels.
+
+What the cold-start optimizer did (transcripts in the MLflow run): in every round Claude built a repetition direction
+(difference of mean residuals between repetitive and productive continuations, the blog's own method), projected it
+out of mid-layer `down_proj` columns, measured the edit paired against the original on fresh problems, saw no gain
+(looping 0.67 to 0.63, accuracy down), and declined to submit it. Four passes per round against the blog's fifty.
 
 The published Experiment-8 edit is rebuilt from the authors' logs and sha256-verified against the evaluated checkpoint,
 so the notebook also answers the decoding-baseline question (T=1.0 per the Qwen model card) in the same table.
