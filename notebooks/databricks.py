@@ -38,7 +38,7 @@ dbutils.widgets.text("catalog", "serverless_lakebase_praneeth_catalog")
 dbutils.widgets.text("schema", "weightspace")
 dbutils.widgets.text("n_dev", "48")
 dbutils.widgets.text("n_holdout", "48")
-dbutils.widgets.text("max_new_tokens", "2048")
+dbutils.widgets.text("max_new_tokens", "4096")
 dbutils.widgets.text("passes_per_round", "8")
 dbutils.widgets.text("max_metric_calls", "200")
 

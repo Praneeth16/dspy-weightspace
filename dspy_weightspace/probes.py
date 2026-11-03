@@ -88,14 +88,16 @@ class Probes:
             preds = self.program.batch_forward([p for _, p, _ in items], seed=0, max_new_tokens=max_tokens)
             rows = []
             for (pid, _problem, gold), pred in zip(items, preds, strict=True):
-                m = self.metric(dspy.Example(answer=gold), pred) if gold is not None else None
+                m = self.metric(dspy.Example(answer=gold if gold is not None else ""), pred)
                 rows.append(
                     {
                         "id": pid,
                         "model": model,
                         "finish_reason": pred.finish_reason,
                         "n_tokens": pred.n_tokens,
-                        "correct": bool(m.correct) if m else None,
+                        "correct": bool(m.correct) if gold is not None else None,
+                        "looping": bool(m.looping),
+                        "repetition_ratio": round(float(m.repetition_ratio), 3),
                         "text": pred.text,
                     }
                 )
@@ -116,15 +118,19 @@ class Probes:
             graded = [r for r in rows if r["correct"] is not None]
             acc = mean(r["correct"] for r in graded) if graded else float("nan")
             cut = mean(r["finish_reason"] == "length" for r in rows)
+            loop = mean(r["looping"] for r in rows)
             toks = mean(r["n_tokens"] for r in rows)
-            out.append(f"{model}: n={len(rows)} accuracy={acc:.3f} cut_at_limit={cut:.3f} mean_tokens={toks:.0f}")
+            out.append(
+                f"{model}: n={len(rows)} accuracy={acc:.3f} looping={loop:.3f} cut_at_limit={cut:.3f} mean_tokens={toks:.0f}"
+            )
             marks = []
             for r in rows:
                 g = "-" if r["correct"] is None else ("C" if r["correct"] else "W")
-                marks.append(f"{r['id']}:{g}{'/cut' if r['finish_reason'] == 'length' else ''}")
+                flags = ("/loop" if r["looping"] else "") + ("/cut" if r["finish_reason"] == "length" else "")
+                marks.append(f"{r['id']}:{g}{flags}")
             out.append("  per item: " + " ".join(marks))
             out.append(
-                f"  texts: {self.work_dir}/gen_{k}_{model}.jsonl (fields id, finish_reason, n_tokens, correct, text)"
+                f"  texts: {self.work_dir}/gen_{k}_{model}.jsonl (fields id, finish_reason, n_tokens, correct, looping, repetition_ratio, text)"
             )
         if len(results) == 2:
             o, e = results["original"], results["edited"]

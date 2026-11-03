@@ -49,7 +49,7 @@ class FakeLM(HFLocalLM):
         out = []
         for _ in chats:
             if self.loops and not fixed:
-                out.append(Completion("<think>wait wait wait wait", "length", 64))
+                out.append(Completion("<think>" + "Wait, let me re-read the question again. " * 40, "length", 64))
             else:
                 out.append(Completion("<think>ok</think> The answer is \\boxed{42}.", "stop", 12))
         return out

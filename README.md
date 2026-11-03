@@ -17,7 +17,7 @@ string. A weight patch is also a string: a short script that edits named tensors
 
 ## Results
 
-Filled in from the Databricks run. Holdout GSM8K subset, thinking on, 2,048 new tokens max. Score = 0.5 accuracy + 0.5 terminated.
+Filled in from the Databricks run. Holdout GSM8K subset, thinking on, 4,096 new tokens max. Score = 0.4 correct + 0.3 terminated + 0.3 not looping (distinct 8-gram ratio over the tail >= 0.6).
 
 __RESULTS_TABLE__
 
@@ -32,17 +32,18 @@ should have been the baseline. Both sit in the same table as the optimizer's own
 from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_gsm8k, math_metric
 from dspy_weightspace.reflection import databricks_lm
 
-lm = HFLocalLM("Qwen/Qwen3.5-0.8B")                  # in-process, keeps a CPU copy of the original tensors
+lm = HFLocalLM("Qwen/Qwen3.5-0.8B")  # in-process, keeps a CPU copy of the original tensors
 student = MathSolver(lm, max_new_tokens=2048)
 dev, holdout = load_gsm8k(48, 48)
 
-opt = WeightSpaceOptimizer(math_metric, reflection_lm=databricks_lm("databricks-claude-sonnet-4-5"),
-                           passes_per_round=8, max_metric_calls=200)
+opt = WeightSpaceOptimizer(
+    math_metric, reflection_lm=databricks_lm("databricks-claude-sonnet-4-5"), passes_per_round=8, max_metric_calls=200
+)
 optimized = opt.compile(student, trainset=dev, valset=dev)
 
-optimized.patch_src          # standalone script that reproduces the edit from original weights
-optimized.weights_changed    # how many entries differ
-optimized.edited_tensors     # which tensors
+optimized.patch_src  # standalone script that reproduces the edit from original weights
+optimized.weights_changed  # how many entries differ
+optimized.edited_tensors  # which tensors
 ```
 
 Pieces, in `dspy_weightspace/`:

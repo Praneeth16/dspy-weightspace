@@ -17,6 +17,7 @@ def score_rows(program: MathSolver, examples: list[dspy.Example], metric, **gen)
     return {
         "accuracy": mean(float(m.correct) for m in ms),
         "cut_rate": mean(float(not m.terminated) for m in ms),
+        "loop_rate": mean(float(m.looping) for m in ms),
         "mean_tokens": mean(p.n_tokens for p in preds),
         "score": mean(float(m.score) for m in ms),
         "n": len(examples),
@@ -24,9 +25,10 @@ def score_rows(program: MathSolver, examples: list[dspy.Example], metric, **gen)
 
 
 def results_table(rows: dict[str, dict]) -> str:
-    head = "| Variant | Accuracy | Cut at limit | Mean tokens | Score | n |\n|---|---|---|---|---|---|"
+    head = "| Variant | Accuracy | Looping | Cut at limit | Mean tokens | Score | n |\n|---|---|---|---|---|---|---|"
     body = "\n".join(
-        f"| {k} | {v['accuracy']:.1%} | {v['cut_rate']:.1%} | {v['mean_tokens']:.0f} | {v['score']:.3f} | {v['n']} |"
+        f"| {k} | {v['accuracy']:.1%} | {v['loop_rate']:.1%} | {v['cut_rate']:.1%} | {v['mean_tokens']:.0f} "
+        f"| {v['score']:.3f} | {v['n']} |"
         for k, v in rows.items()
     )
     return head + "\n" + body

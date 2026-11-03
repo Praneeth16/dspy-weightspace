@@ -44,7 +44,7 @@ def test_adapter_scores_and_reflects(tmp_path):
     base = adapter.evaluate(batch, {COMPONENT: ""}, capture_traces=True)
     assert base.scores == [0.0] * 4
     refl = adapter.make_reflective_dataset({COMPONENT: ""}, base, [COMPONENT])
-    assert "Cut off" in refl[COMPONENT][0]["Feedback"]
+    assert "Looping" in refl[COMPONENT][0]["Feedback"]
     fixed = adapter.evaluate(batch, {COMPONENT: PATCH}, capture_traces=False)
     assert fixed.scores == [1.0] * 4
     assert lm.changed_entries() == 0  # reset after evaluate
