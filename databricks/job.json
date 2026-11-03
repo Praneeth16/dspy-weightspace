@@ -16,17 +16,20 @@
           "max_metric_calls": "200"
         }
       },
-      "environment_key": "gpu",
+      "new_cluster": {
+        "spark_version": "17.3.x-gpu-ml-scala2.13",
+        "node_type_id": "g5.2xlarge",
+        "num_workers": 0,
+        "data_security_mode": "SINGLE_USER",
+        "single_user_name": "__USER__",
+        "spark_conf": {
+          "spark.master": "local[*, 4]",
+          "spark.databricks.cluster.profile": "singleNode"
+        },
+        "custom_tags": {"ResourceClass": "SingleNode", "project": "dspy-weightspace"},
+        "aws_attributes": {"availability": "SPOT_WITH_FALLBACK", "first_on_demand": 1}
+      },
       "timeout_seconds": 14400
-    }
-  ],
-  "environments": [
-    {
-      "environment_key": "gpu",
-      "spec": {
-        "client": "4",
-        "dependencies": ["git+https://github.com/Praneeth16/dspy-weightspace.git", "flash-linear-attention"]
-      }
     }
   ]
 }

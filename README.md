@@ -37,7 +37,7 @@ student = MathSolver(lm, max_new_tokens=2048)
 dev, holdout = load_gsm8k(48, 48)
 
 opt = WeightSpaceOptimizer(
-    math_metric, reflection_lm=databricks_lm("databricks-claude-sonnet-4-5"), passes_per_round=8, max_metric_calls=200
+    math_metric, reflection_lm=databricks_lm("databricks-claude-sonnet-5-5"), passes_per_round=8, max_metric_calls=200
 )
 optimized = opt.compile(student, trainset=dev, valset=dev)
 

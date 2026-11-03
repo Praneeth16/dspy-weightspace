@@ -8,9 +8,7 @@ import dspy
 
 
 def anthropic_lm(model: str = "anthropic/claude-fable-5-1", **kw) -> dspy.LM:
-    return dspy.LM(
-        model, max_tokens=kw.pop("max_tokens", 8000), temperature=kw.pop("temperature", 0.2), cache=False, **kw
-    )
+    return dspy.LM(model, max_tokens=kw.pop("max_tokens", 8000), cache=False, **kw)
 
 
 def databricks_lm(endpoint: str, profile: str | None = None, **kw) -> dspy.LM:
@@ -21,12 +19,12 @@ def databricks_lm(endpoint: str, profile: str | None = None, **kw) -> dspy.LM:
 
     w = WorkspaceClient(profile=profile) if profile else WorkspaceClient()
     token = w.config.authenticate()["Authorization"].split(" ", 1)[1]
+    # Claude 5.x endpoints reject the temperature parameter; leave it unset unless the caller insists.
     return dspy.LM(
         f"openai/{endpoint}",
         api_base=f"{w.config.host}/serving-endpoints",
         api_key=token,
         max_tokens=kw.pop("max_tokens", 8000),
-        temperature=kw.pop("temperature", 0.2),
         cache=False,
         **kw,
     )
@@ -34,7 +32,7 @@ def databricks_lm(endpoint: str, profile: str | None = None, **kw) -> dspy.LM:
 
 def from_env() -> dspy.LM:
     """REFLECTION_LM=databricks:<endpoint> | anthropic:<model>."""
-    spec = os.environ.get("REFLECTION_LM", "databricks:databricks-claude-sonnet-4-5")
+    spec = os.environ.get("REFLECTION_LM", "databricks:databricks-claude-sonnet-5-5")
     kind, _, name = spec.partition(":")
     if kind == "databricks":
         return databricks_lm(name, profile=os.environ.get("DATABRICKS_CONFIG_PROFILE"))

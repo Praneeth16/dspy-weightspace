@@ -17,7 +17,15 @@
 # COMMAND ----------
 
 # MAGIC %pip install -q git+https://github.com/Praneeth16/dspy-weightspace.git
-# MAGIC dbutils.library.restartPython()
+
+# COMMAND ----------
+
+# Optional fast kernels for the Gated DeltaNet layers; the reference PyTorch path is used if this fails.
+import subprocess
+import sys
+
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "flash-linear-attention"], check=False)
+dbutils.library.restartPython()
 
 # COMMAND ----------
 
@@ -33,7 +41,7 @@ from dspy_weightspace.baseline import results_table, score_rows
 from dspy_weightspace.published_edit import BASE_REVISION, build
 from dspy_weightspace.reflection import databricks_lm
 
-dbutils.widgets.text("reflection_endpoint", "databricks-claude-sonnet-4-5")
+dbutils.widgets.text("reflection_endpoint", "databricks-claude-sonnet-5-5")
 dbutils.widgets.text("catalog", "serverless_lakebase_praneeth_catalog")
 dbutils.widgets.text("schema", "weightspace")
 dbutils.widgets.text("n_dev", "48")
