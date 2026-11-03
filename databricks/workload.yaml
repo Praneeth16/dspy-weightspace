@@ -26,4 +26,5 @@ env_variables:
   PASSES_PER_ROUND: "4"
   MAX_METRIC_CALLS: "80"
   MAX_TURNS: "24"
+  SEED_PATCH: ""              # "published" = warm-start from the Experiment-8 edit and ask the model to improve it
   HF_HOME: /tmp/hf

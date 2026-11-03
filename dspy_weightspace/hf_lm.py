@@ -227,26 +227,40 @@ class HFLocalLM(BaseLM):
         raise AttributeError("could not locate decoder layers")
 
     @torch.no_grad()
-    def hidden_states(self, chats: list[list[dict[str, str]]], layers: list[int], completions: list[str] | None = None):
+    def hidden_states(
+        self,
+        chats: list[list[dict[str, str]]],
+        layers: list[int],
+        completions: list[str] | None = None,
+        max_completion_tokens: int = 1024,
+        chunk: int = 4,
+    ):
         """Teacher-forced residual stream after each requested layer, mean over the completion tokens.
 
+        Completions are truncated to `max_completion_tokens` and texts processed `chunk` at a time: eager attention
+        on full-attention layers is quadratic in length, and a 24 x 4k batch exhausts a 24 GB GPU.
         Returns {layer: tensor[n, hidden]} on CPU float32. One call counts as one forward pass.
         """
         self.passes += 1
-        texts = [self._render(c) + (completions[i] if completions else "") for i, c in enumerate(chats)]
-        enc = self.tok(texts, return_tensors="pt", padding=True).to(self.device)
+        texts = []
+        for i, c in enumerate(chats):
+            comp = completions[i] if completions else ""
+            ids = self.tok(comp, add_special_tokens=False)["input_ids"][:max_completion_tokens]
+            texts.append(self._render(c) + self.tok.decode(ids))
         prompt_lens = [len(self.tok(self._render(c))["input_ids"]) for c in chats]
-        out = self.hf(**enc, output_hidden_states=True)
-        hs = out.hidden_states
-        res: dict[int, torch.Tensor] = {}
-        mask = enc["attention_mask"]
-        total = mask.shape[1]
-        for layer in layers:
-            h = hs[layer].float()
-            rows = []
-            for i in range(h.shape[0]):
-                start = total - int(mask[i].sum()) + prompt_lens[i]
-                seg = h[i, start:] if start < total else h[i, -1:]
-                rows.append(seg.mean(0))
-            res[layer] = torch.stack(rows).cpu()
-        return res
+        res: dict[int, list[torch.Tensor]] = {layer: [] for layer in layers}
+        for start in range(0, len(texts), chunk):
+            enc = self.tok(texts[start : start + chunk], return_tensors="pt", padding=True).to(self.device)
+            out = self.hf(**enc, output_hidden_states=True)
+            mask = enc["attention_mask"]
+            total = mask.shape[1]
+            for layer in layers:
+                h = out.hidden_states[layer].float()
+                for i in range(h.shape[0]):
+                    begin = total - int(mask[i].sum()) + prompt_lens[start + i]
+                    seg = h[i, begin:] if begin < total else h[i, -1:]
+                    res[layer].append(seg.mean(0).cpu())
+            del out, enc
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+        return {layer: torch.stack(rows) for layer, rows in res.items()}

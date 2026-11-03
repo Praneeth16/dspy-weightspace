@@ -180,6 +180,8 @@ class Probes:
         )
 
     def dispatch(self, req: dict) -> str:
+        """Never raise into the proposer: a failed probe is reported to the model and does not cost a pass."""
+        used_before = self.used
         try:
             if req.get("type") == "generate":
                 return self.generate(req)
@@ -188,3 +190,12 @@ class Probes:
             return "error: type must be 'generate' or 'teacher_forced'"
         except BudgetExhausted as e:
             return f"error: {e}"
+        except Exception as e:  # noqa: BLE001
+            self.used = used_before
+            self.lm.reset()
+            if self.lm.device == "cuda":
+                import torch
+
+                torch.cuda.empty_cache()
+            msg = str(e).split("\n")[0][:300]
+            return f"error: probe failed ({type(e).__name__}: {msg}). Not charged. Use fewer items or shorter texts."

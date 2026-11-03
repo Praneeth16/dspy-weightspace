@@ -16,7 +16,7 @@ import torch
 
 from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_gsm8k, math_metric
 from dspy_weightspace.baseline import results_table, score_rows
-from dspy_weightspace.published_edit import BASE_REVISION, build
+from dspy_weightspace.published_edit import BASE_REVISION, as_patch_script, build
 from dspy_weightspace.reflection import databricks_lm
 
 E = os.environ
@@ -25,6 +25,7 @@ ENDPOINT = E.get("REFLECTION_ENDPOINT", "databricks-claude-sonnet-5-5")
 N_DEV, N_HOLD = int(E.get("N_DEV", 32)), int(E.get("N_HOLDOUT", 48))
 MAX_NEW, PASSES = int(E.get("MAX_NEW_TOKENS", 4096)), int(E.get("PASSES_PER_ROUND", 6))
 METRIC_CALLS, MAX_TURNS = int(E.get("MAX_METRIC_CALLS", 100)), int(E.get("MAX_TURNS", 30))
+SEED_PATCH = as_patch_script() if E.get("SEED_PATCH", "") == "published" else ""
 RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}"
 os.makedirs(RUN_DIR, exist_ok=True)
 print(
@@ -72,6 +73,7 @@ opt = WeightSpaceOptimizer(
     max_items_per_pass=24,
     reflection_minibatch_size=8,
     max_turns=MAX_TURNS,
+    seed_patch=SEED_PATCH,
     log_dir=f"{RUN_DIR}/optimizer",
 )
 with mlflow.start_run() as run:
@@ -85,6 +87,7 @@ with mlflow.start_run() as run:
             "passes_per_round": PASSES,
             "max_metric_calls": METRIC_CALLS,
             "max_turns": MAX_TURNS,
+            "seed_patch": "published" if SEED_PATCH else "none",
         }
     )
     t0 = time.time()
