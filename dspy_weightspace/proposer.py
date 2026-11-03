@@ -65,8 +65,9 @@ off if they hurt accuracy. Keep notes compact.
 FINISH. When the budget is spent, or earlier if you are confident, reply with exactly one block starting with \
 ```patch containing a STANDALONE Python script that reproduces your final edit from the original weights. It may \
 use load_original, save_edit, load_artifact, torch, np and literals only (no probes, no kernel variables). It is \
-run in a fresh kernel and becomes the candidate that is evaluated. After the patch block, one paragraph: what \
-changed, the evidence, the expected effect.
+run in a fresh kernel and becomes the candidate that is evaluated. If the evidence supports no edit, send an EMPTY \
+```patch block (that means: keep the original weights). After the patch block, one paragraph: what changed, the \
+evidence, the expected effect.
 """
 
 
@@ -184,6 +185,9 @@ class WeightPatchProposer:
             else:
                 kind, body = blocks[0]
                 if kind == "patch":
+                    if not body.strip():
+                        final = ""
+                        break
                     fresh, res = run_fresh(self.lm, body, self.work_dir)
                     if res.ok and fresh.edits:
                         final = body

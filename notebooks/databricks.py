@@ -48,7 +48,8 @@ dbutils.widgets.text("n_dev", "48")
 dbutils.widgets.text("n_holdout", "48")
 dbutils.widgets.text("max_new_tokens", "4096")
 dbutils.widgets.text("passes_per_round", "8")
-dbutils.widgets.text("max_metric_calls", "200")
+dbutils.widgets.text("max_metric_calls", "100")
+dbutils.widgets.text("max_turns", "30")
 
 P = {k: dbutils.widgets.get(k) for k in ["reflection_endpoint", "catalog", "schema"]}
 N_DEV, N_HOLD = int(dbutils.widgets.get("n_dev")), int(dbutils.widgets.get("n_holdout"))
@@ -105,8 +106,9 @@ opt = WeightSpaceOptimizer(
     reflection,
     max_metric_calls=METRIC_CALLS,
     passes_per_round=PASSES,
-    max_items_per_pass=32,
+    max_items_per_pass=24,
     reflection_minibatch_size=8,
+    max_turns=MAX_TURNS,
     log_dir=f"{RUN_DIR}/optimizer",
 )
 with mlflow.start_run(run_name="weightspace-optimizer") as run:
