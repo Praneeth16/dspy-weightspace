@@ -1,0 +1,30 @@
+# AI Runtime (serverless GPU) workload for the end-to-end run.
+#   databricks air run --file databricks/workload.yaml --profile <profile> --watch
+# Override anything with --override, e.g. --override env_variables.N_DEV=16
+experiment_name: dspy-weightspace
+mlflow_experiment_directory: /Workspace/Users/praneeth.paikray@databricks.com/dspy-weightspace
+mlflow_run_name: weightspace-e2e
+compute:
+  accelerator_type: GPU_1xA10
+  num_accelerators: 1
+environment:
+  version: databricks_ai_v6   # torch, transformers, vLLM preinstalled
+  dependencies:
+    - git+https://github.com/Praneeth16/dspy-weightspace.git
+    - flash-linear-attention
+code_source:
+  root_path: .                # this folder; run_air.py
+command: python $CODE_SOURCE_PATH/run_air.py
+timeout_minutes: 360
+max_retries: 0
+env_variables:
+  WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
+  REFLECTION_ENDPOINT: databricks-claude-sonnet-5-5
+  N_DEV: "32"
+  N_HOLDOUT: "48"
+  MAX_NEW_TOKENS: "4096"
+  PASSES_PER_ROUND: "6"
+  MAX_METRIC_CALLS: "100"
+  MAX_TURNS: "30"
+  MLFLOW_EXPERIMENT: /Users/praneeth.paikray@databricks.com/dspy-weightspace/mlflow_experiment
+  HF_HOME: /tmp/hf
