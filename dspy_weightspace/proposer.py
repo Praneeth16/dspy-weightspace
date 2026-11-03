@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 
 import dspy
 
@@ -14,6 +17,7 @@ from .probes import Probes
 from .sandbox import PatchSandbox, run_fresh
 
 BLOCK = re.compile(r"```(python|forward|patch)\s*\n(.*?)```", re.S)
+logger = logging.getLogger(__name__)
 
 SYSTEM = """\
 TASK. You are given the weights of a small language model, {model_name} ({arch}). Your job is to make it better at \
@@ -89,10 +93,32 @@ class WeightPatchProposer:
         work_dir: str,
         max_turns: int = 40,
         max_code_runs: int = 30,
+        lm_timeout: float = 600.0,
+        lm_attempts: int = 3,
     ):
         self.reflection_lm, self.lm, self.probes, self.work_dir = reflection_lm, lm, probes, work_dir
         self.max_turns, self.max_code_runs = max_turns, max_code_runs
+        self.lm_timeout, self.lm_attempts = lm_timeout, lm_attempts
         self.round = 0
+        self._pool = ThreadPoolExecutor(max_workers=2)
+
+    def _ask(self, messages: list[dict[str, str]]) -> str:
+        """Call the reflection LM with a wall-clock timeout; a hung HTTP request must not stall the run."""
+        last: Exception | None = None
+        for attempt in range(1, self.lm_attempts + 1):
+            fut = self._pool.submit(self.reflection_lm, messages=messages)
+            try:
+                return fut.result(timeout=self.lm_timeout)[0]
+            except FutureTimeout as e:
+                last = e
+                logger.warning(
+                    "reflection LM timed out after %.0fs (attempt %d/%d)", self.lm_timeout, attempt, self.lm_attempts
+                )
+            except Exception as e:  # noqa: BLE001
+                last = e
+                logger.warning("reflection LM call failed (attempt %d/%d): %s", attempt, self.lm_attempts, e)
+                time.sleep(5 * attempt)
+        raise RuntimeError(f"reflection LM failed after {self.lm_attempts} attempts") from last
 
     def _system(self) -> str:
         return SYSTEM.format(
@@ -145,7 +171,7 @@ class WeightPatchProposer:
         code_runs = 0
         final: str | None = None
         for turn in range(self.max_turns):
-            reply = self.reflection_lm(messages=messages)[0]
+            reply = self._ask(messages)
             messages.append({"role": "assistant", "content": reply})
             transcript.write(f"\n\n## assistant (turn {turn + 1})\n{reply}")
             blocks = BLOCK.findall(reply)

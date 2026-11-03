@@ -23,7 +23,10 @@ __RESULTS_TABLE__
 
 Budget here is a small fraction of the blog's (50 passes at 32k tokens, 158 turns, 20 hours). Read the table as
 "does the loop work", not as a MATH-500 claim. The published Experiment-8 edit is rebuilt from the authors' logs and
-sha256-verified against the checkpoint they evaluated. The T=1.0 row is the Qwen model-card sampling that critics said
+sha256-verified against the checkpoint they evaluated; the two rebuilt tensors are bit-identical to the ones in
+[ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming](https://huggingface.co/ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming)
+(the checkpoint Hugging Face's ML Intern rebuilt and scored at 51.0% MATH-500 with the full 32k-token protocol).
+For that full protocol on a GPU box, `scripts/eval_vllm.py` reproduces it with vLLM. The T=1.0 row is the Qwen model-card sampling that critics said
 should have been the baseline. Both sit in the same table as the optimizer's own edit.
 
 ## How it works
