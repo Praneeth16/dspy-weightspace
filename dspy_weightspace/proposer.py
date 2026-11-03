@@ -17,6 +17,19 @@ from .probes import Probes
 from .sandbox import PatchSandbox, run_fresh
 
 BLOCK = re.compile(r"```(python|forward|patch)\s*\n(.*?)```", re.S)
+# Some models emit tool-call XML instead of a fenced block; accept it rather than waste a turn.
+INVOKE = re.compile(
+    r'<invoke name="(python|forward|patch)">\s*<parameter name="\w+">(.*?)</parameter>\s*</invoke>', re.S
+)
+
+
+def find_blocks(reply: str) -> list[tuple[str, str]]:
+    blocks = BLOCK.findall(reply)
+    if blocks:
+        return [(k, b) for k, b in blocks if b.strip() or k == "patch"] or blocks
+    return [(k, b.strip("\n")) for k, b in INVOKE.findall(reply)]
+
+
 logger = logging.getLogger(__name__)
 
 SYSTEM = """\
@@ -176,7 +189,7 @@ class WeightPatchProposer:
             messages.append({"role": "assistant", "content": reply})
             transcript.write(f"\n\n## assistant (turn {turn + 1})\n{reply}")
             transcript.flush()
-            blocks = BLOCK.findall(reply)
+            blocks = find_blocks(reply)
             if not blocks:
                 if self.probes.left <= 0 and sb.edits:
                     final = sb.export_script()

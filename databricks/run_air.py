@@ -62,6 +62,11 @@ published = build({n: lm.original(n) for n in NAMES}, cache_dir=f"{VOL}/exp8_edi
 lm.apply_patch(published)
 rows["published Exp-8 edit (131k weights)"] = score_rows(prog, hold, math_metric)
 lm.reset()
+# Dose-response on the published delta, the direction the warm-start round explored: W = W0 + k * (W_pub - W0).
+for k in [float(x) for x in E.get("EXTRA_SCALES", "").split(",") if x.strip()]:
+    lm.apply_patch({n: lm.original(n) + k * (published[n] - lm.original(n)) for n in NAMES})
+    rows[f"published delta x {k:g}"] = score_rows(prog, hold, math_metric)
+    lm.reset()
 print(results_table(rows), flush=True)
 
 reflection = databricks_lm(ENDPOINT)
