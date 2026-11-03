@@ -72,7 +72,8 @@ def math_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> dspy
     else:
         fb = f"Terminated but wrong: extracted {answer!r}, expected {gold.answer!r}."
     if not terminated and answer is not None:
-        fb += f" Provisional boxed answer seen in thinking: {answer!r} ({'matches' if correct else 'does not match'} gold)."
+        match = "matches" if correct else "does not match"
+        fb += f" Provisional boxed answer seen in thinking: {answer!r} ({match} gold)."
     return dspy.Prediction(
         score=score, feedback=fb, correct=correct, terminated=terminated, looping=looping, repetition_ratio=ratio
     )

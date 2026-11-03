@@ -121,7 +121,8 @@ class Probes:
             loop = mean(r["looping"] for r in rows)
             toks = mean(r["n_tokens"] for r in rows)
             out.append(
-                f"{model}: n={len(rows)} accuracy={acc:.3f} looping={loop:.3f} cut_at_limit={cut:.3f} mean_tokens={toks:.0f}"
+                f"{model}: n={len(rows)} accuracy={acc:.3f} looping={loop:.3f} "
+                f"cut_at_limit={cut:.3f} mean_tokens={toks:.0f}"
             )
             marks = []
             for r in rows:
@@ -130,7 +131,8 @@ class Probes:
                 marks.append(f"{r['id']}:{g}{flags}")
             out.append("  per item: " + " ".join(marks))
             out.append(
-                f"  texts: {self.work_dir}/gen_{k}_{model}.jsonl (fields id, finish_reason, n_tokens, correct, looping, repetition_ratio, text)"
+                f"  texts: {self.work_dir}/gen_{k}_{model}.jsonl "
+                "(fields id, finish_reason, n_tokens, correct, looping, repetition_ratio, text)"
             )
         if len(results) == 2:
             o, e = results["original"], results["edited"]
