@@ -3,7 +3,8 @@
 ## assistant (turn 1)
 ```python
 # hypothesis: inspect tensor names to plan edits
-print(len(NAMES)); print([n for n in NAMES if 'layers.3.' in n or 'layers.2.' in n][:40])
+print(len(NAMES))
+print([n for n in NAMES if "layers.3." in n or "layers.2." in n][:40])
 ```
 
 ## tool
@@ -60,16 +61,19 @@ pass 1 (3 left): teacher-forced 6 texts on original; mean residual over assistan
 ```python
 # hypothesis: rep-minus-good mean residual gives a direction; check consistency across pairs and layers
 import numpy as np
-base='/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514/optimizer/round_03/fwd_1_original_L%d.npy'
-D={}
-for L in [6,10,14,18,22]:
-    A=np.load(base%L); rep=A[1::2]; good=A[0::2]
-    d=rep-good
-    dm=d.mean(0)
-    cos=[float(np.dot(x,dm)/np.linalg.norm(x)/np.linalg.norm(dm)) for x in d]
-    print(L,A.shape,np.round(np.linalg.norm(dm),2),np.round(cos,2),np.round(np.linalg.norm(A.mean(0)),1))
-    D[L]=dm
-    save_artifact('repdir_L%d'%L,torch.tensor(dm))
+
+base = "/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514/optimizer/round_03/fwd_1_original_L%d.npy"
+D = {}
+for L in [6, 10, 14, 18, 22]:
+    A = np.load(base % L)
+    rep = A[1::2]
+    good = A[0::2]
+    d = rep - good
+    dm = d.mean(0)
+    cos = [float(np.dot(x, dm) / np.linalg.norm(x) / np.linalg.norm(dm)) for x in d]
+    print(L, A.shape, np.round(np.linalg.norm(dm), 2), np.round(cos, 2), np.round(np.linalg.norm(A.mean(0)), 1))
+    D[L] = dm
+    save_artifact("repdir_L%d" % L, torch.tensor(dm))
 ```
 
 ## tool
@@ -84,13 +88,18 @@ for L in [6,10,14,18,22]:
 ## assistant (turn 5)
 ```python
 # hypothesis: a few late-layer MLP neurons write strongly along the repetition direction; list them
-d22=D[22]/np.linalg.norm(D[22]); d18=D[18]/np.linalg.norm(D[18])
-for L in range(14,22):
-    W=load('model.layers.%d.mlp.down_proj.weight'%L)  # [1024,3584]
-    nrm=W.norm(dim=0)
-    proj=(torch.tensor(d18)@W)  # [3584]
-    top=torch.topk(proj,5)
-    print(L,[ (int(i),round(float(v),2),round(float(nrm[i]),2)) for v,i in zip(top.values,top.indices)], round(float(proj.std()),3))
+d22 = D[22] / np.linalg.norm(D[22])
+d18 = D[18] / np.linalg.norm(D[18])
+for L in range(14, 22):
+    W = load("model.layers.%d.mlp.down_proj.weight" % L)  # [1024,3584]
+    nrm = W.norm(dim=0)
+    proj = torch.tensor(d18) @ W  # [3584]
+    top = torch.topk(proj, 5)
+    print(
+        L,
+        [(int(i), round(float(v), 2), round(float(nrm[i]), 2)) for v, i in zip(top.values, top.indices)],
+        round(float(proj.std()), 3),
+    )
 ```
 
 ## tool
@@ -108,15 +117,19 @@ for L in range(14,22):
 ## assistant (turn 6)
 ```python
 # hypothesis: projecting the repetition direction out of mid-layer MLP writes reduces looping
-d=torch.tensor(D[18]/np.linalg.norm(D[18])).float()
-def apply(layers,alpha):
+d = torch.tensor(D[18] / np.linalg.norm(D[18])).float()
+
+
+def apply(layers, alpha):
     for L in layers:
-        n='model.layers.%d.mlp.down_proj.weight'%L
-        W=load_original(n)
-        W2=W-alpha*torch.outer(d,d@W)
-        save_edit(n,W2)
-apply(range(14,18),1.0)
-print(edited()[:3] if isinstance(edited(),list) else edited())
+        n = "model.layers.%d.mlp.down_proj.weight" % L
+        W = load_original(n)
+        W2 = W - alpha * torch.outer(d, d @ W)
+        save_edit(n, W2)
+
+
+apply(range(14, 18), 1.0)
+print(edited()[:3] if isinstance(edited(), list) else edited())
 ```
 
 ## tool
@@ -143,9 +156,18 @@ paired: wrong->right 1, right->wrong 0, diff +0.042
 ```python
 # hypothesis: inspect where loops start in original texts to find the trigger token pattern
 import json
-rows=[json.loads(l) for l in open('/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514/optimizer/round_03/gen_2_original.jsonl')]
+
+rows = [
+    json.loads(l)
+    for l in open(
+        "/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514/optimizer/round_03/gen_2_original.jsonl"
+    )
+]
 for r in rows[:6]:
-    t=r['text']; print(r['id'],len(t),repr(t[:200])); print('   MID',repr(t[3000:3300])); print()
+    t = r["text"]
+    print(r["id"], len(t), repr(t[:200]))
+    print("   MID", repr(t[3000:3300]))
+    print()
 ```
 
 ## tool
@@ -173,11 +195,11 @@ p014 15687 "Here's a thinking process that leads to the solution:\n\n1.  **Analy
 ## assistant (turn 9)
 ```python
 # hypothesis: wider removal of repetition direction (layers 10-21) reduces looping more
-for L in range(10,22):
-    n='model.layers.%d.mlp.down_proj.weight'%L
-    W=load_original(n)
-    dd=torch.tensor(D[18]/np.linalg.norm(D[18])).float()
-    save_edit(n,W-1.5*torch.outer(dd,dd@W))
+for L in range(10, 22):
+    n = "model.layers.%d.mlp.down_proj.weight" % L
+    W = load_original(n)
+    dd = torch.tensor(D[18] / np.linalg.norm(D[18])).float()
+    save_edit(n, W - 1.5 * torch.outer(dd, dd @ W))
 print(len(edited()))
 ```
 
@@ -209,13 +231,13 @@ paired: wrong->right 1, right->wrong 3, diff -0.083
 ## assistant (turn 11)
 ```python
 # hypothesis: restore narrow edit (layers 14-17, alpha 1.0); wide edit hurt, so verify narrow on fresh problems
-for L in range(10,22):
-    drop_edit('model.layers.%d.mlp.down_proj.weight'%L)
-dd=torch.tensor(D[18]/np.linalg.norm(D[18])).float()
-for L in range(14,18):
-    n='model.layers.%d.mlp.down_proj.weight'%L
-    W=load_original(n)
-    save_edit(n,W-1.0*torch.outer(dd,dd@W))
+for L in range(10, 22):
+    drop_edit("model.layers.%d.mlp.down_proj.weight" % L)
+dd = torch.tensor(D[18] / np.linalg.norm(D[18])).float()
+for L in range(14, 18):
+    n = "model.layers.%d.mlp.down_proj.weight" % L
+    W = load_original(n)
+    save_edit(n, W - 1.0 * torch.outer(dd, dd @ W))
 print(len(edited()))
 ```
 

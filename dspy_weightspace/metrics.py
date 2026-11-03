@@ -7,6 +7,7 @@ notebook budgets (2k-4k tokens) almost nothing terminates, so the loop detector 
 
 from __future__ import annotations
 
+import math
 import re
 from collections import Counter
 
@@ -33,9 +34,11 @@ def normalize(s: str) -> str:
     s = s.rstrip(".")
     try:
         f = float(s)
-        return str(int(f)) if f == int(f) else str(f)
     except ValueError:
         return s
+    if not math.isfinite(f):
+        return s
+    return str(int(f)) if f == int(f) else str(f)
 
 
 def is_correct(pred: str | None, gold: str) -> bool:
@@ -53,6 +56,21 @@ def repetition(text: str, k: int = LOOP_NGRAM, tail: int = LOOP_TAIL_WORDS) -> t
 
 
 def math_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> dspy.Prediction:
+    """Never raises: a metric exception inside GEPA's valset pass would discard the candidate being scored."""
+    try:
+        return _math_metric(gold, pred)
+    except Exception as e:  # noqa: BLE001
+        return dspy.Prediction(
+            score=0.0,
+            feedback=f"metric error: {type(e).__name__}: {e}",
+            correct=False,
+            terminated=False,
+            looping=False,
+            repetition_ratio=1.0,
+        )
+
+
+def _math_metric(gold, pred) -> dspy.Prediction:
     text = getattr(pred, "text", "") or ""
     finish = getattr(pred, "finish_reason", "stop")
     answer = extract_answer(text)

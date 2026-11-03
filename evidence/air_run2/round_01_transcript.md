@@ -3,9 +3,10 @@
 ## assistant (turn 1)
 ```python
 # hypothesis: inspect tensor names/shapes to plan edits
-print(len(NAMES)); 
+print(len(NAMES))
 for n in NAMES:
-    if 'layers.3.' in n or 'layers.2.' in n or not n.startswith('model.layers'): print(n, tuple(load(n).shape))
+    if "layers.3." in n or "layers.2." in n or not n.startswith("model.layers"):
+        print(n, tuple(load(n).shape))
 ```
 
 ## tool
@@ -83,18 +84,26 @@ No code block found. Reply with exactly one ```python, ```forward or ```patch bl
 ```python
 # hypothesis: build compact repetitive vs productive chats; print JSON to paste into a forward block
 import json
-rep_chats=[];prod_chats=[]
-for a,b,c in [(12,7,5),(20,9,4),(15,6,8),(30,11,7)]:
-    u=f"Tom has {a} apples. He buys {b} more, then gives {c} away. How many are left?\nPlease reason step by step, and put your final answer within \\boxed{{}}."
-    loop=f"Wait, let me re-read the problem. Tom has {a} apples, buys {b}, gives {c}. Wait, let me re-read the problem again. "
-    rep=f"Thinking Process:\n\n1. {a}+{b}={a+b}, minus {c} is {a+b-c}.\n\n"+loop*4
-    prod=f"Thinking Process:\n\n1. Start with {a} apples.\n2. Buy {b}: {a}+{b}={a+b}.\n3. Give {c}: {a+b}-{c}={a+b-c}.\n4. The answer is {a+b-c}.\n</think>\n\n\\boxed{{{a+b-c}}}"
-    rep_chats.append([{"role":"user","content":u},{"role":"assistant","content":rep}])
-    prod_chats.append([{"role":"user","content":u},{"role":"assistant","content":prod}])
-req={"type":"teacher_forced","model":"original","chats":rep_chats+prod_chats,"return":{"hidden_states":[4,8,12,16,20,24]}}
-s=json.dumps(req)
-open(WORK+"/req.json","w").write(s)
-print(len(s)); print(s)
+
+rep_chats = []
+prod_chats = []
+for a, b, c in [(12, 7, 5), (20, 9, 4), (15, 6, 8), (30, 11, 7)]:
+    u = f"Tom has {a} apples. He buys {b} more, then gives {c} away. How many are left?\nPlease reason step by step, and put your final answer within \\boxed{{}}."
+    loop = f"Wait, let me re-read the problem. Tom has {a} apples, buys {b}, gives {c}. Wait, let me re-read the problem again. "
+    rep = f"Thinking Process:\n\n1. {a}+{b}={a + b}, minus {c} is {a + b - c}.\n\n" + loop * 4
+    prod = f"Thinking Process:\n\n1. Start with {a} apples.\n2. Buy {b}: {a}+{b}={a + b}.\n3. Give {c}: {a + b}-{c}={a + b - c}.\n4. The answer is {a + b - c}.\n</think>\n\n\\boxed{{{a + b - c}}}"
+    rep_chats.append([{"role": "user", "content": u}, {"role": "assistant", "content": rep}])
+    prod_chats.append([{"role": "user", "content": u}, {"role": "assistant", "content": prod}])
+req = {
+    "type": "teacher_forced",
+    "model": "original",
+    "chats": rep_chats + prod_chats,
+    "return": {"hidden_states": [4, 8, 12, 16, 20, 24]},
+}
+s = json.dumps(req)
+open(WORK + "/req.json", "w").write(s)
+print(len(s))
+print(s)
 ```
 
 ## tool
@@ -115,22 +124,37 @@ pass 1 (3 left): teacher-forced 8 texts on original; mean residual over assistan
 ```python
 # hypothesis: diff-of-means (rep - prod) per layer; find MLP down_proj neurons aligned with it
 import numpy as np, glob
-base="/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514/optimizer/round_01/"
-D={}
-for L in [4,8,12,16,20,24]:
-    X=np.load(base+f"fwd_1_original_L{L}.npy")
-    d=X[:4].mean(0)-X[4:].mean(0)
-    D[L]=d
-    print(L, X.shape, "norm diff",round(float(np.linalg.norm(d)),2),"norm mean",round(float(np.linalg.norm(X.mean(0))),1))
-for L in [8,12,16,20]:
-    save_artifact(f"d{L}",torch.tensor(D[L]))
+
+base = "/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts/runs/20261103-172514/optimizer/round_01/"
+D = {}
+for L in [4, 8, 12, 16, 20, 24]:
+    X = np.load(base + f"fwd_1_original_L{L}.npy")
+    d = X[:4].mean(0) - X[4:].mean(0)
+    D[L] = d
+    print(
+        L,
+        X.shape,
+        "norm diff",
+        round(float(np.linalg.norm(d)), 2),
+        "norm mean",
+        round(float(np.linalg.norm(X.mean(0))), 1),
+    )
+for L in [8, 12, 16, 20]:
+    save_artifact(f"d{L}", torch.tensor(D[L]))
 # neuron alignment: down_proj columns of layer L-1..., choose layer 15 mlp for d16
-for L in [12,16,20]:
-    W=load(f"model.layers.{L-1}.mlp.down_proj.weight")
-    dn=torch.tensor(D[L]); dn=dn/dn.norm()
-    s=(dn@W)  # per neuron projection
-    top=torch.topk(s,8)
-    print(L-1,"top",[(int(i),round(float(v),3)) for v,i in zip(top.values,top.indices)],"colnorm mean",round(float(W.norm(dim=0).mean()),3))
+for L in [12, 16, 20]:
+    W = load(f"model.layers.{L - 1}.mlp.down_proj.weight")
+    dn = torch.tensor(D[L])
+    dn = dn / dn.norm()
+    s = dn @ W  # per neuron projection
+    top = torch.topk(s, 8)
+    print(
+        L - 1,
+        "top",
+        [(int(i), round(float(v), 3)) for v, i in zip(top.values, top.indices)],
+        "colnorm mean",
+        round(float(W.norm(dim=0).mean()), 3),
+    )
 ```
 
 ## tool
@@ -149,13 +173,14 @@ for L in [12,16,20]:
 ## assistant (turn 6)
 ```python
 # hypothesis: projecting out the repetition direction (d16) from MLP outputs in layers 13-17 reduces looping
-u=torch.tensor(D[16]); u=u/u.norm()
-for L in range(13,18):
-    n=f"model.layers.{L}.mlp.down_proj.weight"
-    W=load_original(n)
-    W2=W-0.8*torch.outer(u,u@W)
-    save_edit(n,W2)
-    print(L,float((W2-W).norm()/W.norm()))
+u = torch.tensor(D[16])
+u = u / u.norm()
+for L in range(13, 18):
+    n = f"model.layers.{L}.mlp.down_proj.weight"
+    W = load_original(n)
+    W2 = W - 0.8 * torch.outer(u, u @ W)
+    save_edit(n, W2)
+    print(L, float((W2 - W).norm() / W.norm()))
 ```
 
 ## tool
@@ -186,9 +211,14 @@ paired: wrong->right 2, right->wrong 2, diff +0.000
 ```python
 # hypothesis: read original generations to see how thinking starts looping and what token precedes the loop
 import json
-R=[json.loads(l) for l in open(base+"gen_2_original.jsonl")]
+
+R = [json.loads(l) for l in open(base + "gen_2_original.jsonl")]
 for r in R[:3]:
-    t=r['text']; print(r['id'],r['n_tokens'],len(t)); print(repr(t[:700])); print('...',repr(t[2500:3100])); print()
+    t = r["text"]
+    print(r["id"], r["n_tokens"], len(t))
+    print(repr(t[:700]))
+    print("...", repr(t[2500:3100]))
+    print()
 ```
 
 ## tool
@@ -210,13 +240,14 @@ p001 4096 14343
 ## assistant (turn 9)
 ```python
 # hypothesis: stronger/wider projection of the repetition direction (layers 10-21, both d16 and d20) cuts looping
-for L in range(10,22):
-    n=f"model.layers.{L}.mlp.down_proj.weight"
-    W=load_original(n)
-    for dd in (D[16],D[20]):
-        u=torch.tensor(dd); u=u/u.norm()
-        W=W-1.0*torch.outer(u,u@W)
-    save_edit(n,W)
+for L in range(10, 22):
+    n = f"model.layers.{L}.mlp.down_proj.weight"
+    W = load_original(n)
+    for dd in (D[16], D[20]):
+        u = torch.tensor(dd)
+        u = u / u.norm()
+        W = W - 1.0 * torch.outer(u, u @ W)
+    save_edit(n, W)
 print(edited()[:3])
 ```
 
