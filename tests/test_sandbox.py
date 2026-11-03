@@ -68,3 +68,11 @@ def test_stdout_truncated(tmp_path):
     sb = PatchSandbox(FakeLM(), str(tmp_path))
     res = sb.run("print('x' * 20000)")
     assert len(res.stdout) < 10_200 and "cut at" in res.stdout
+
+
+def test_time_limit_interrupts_python_loop(tmp_path):
+    sb = PatchSandbox(FakeLM(), str(tmp_path), time_limit_s=1)
+    res = sb.run("i = 0\nwhile True:\n    i += 1\n")
+    assert not res.ok and "exceeded" in res.error
+    # kernel still usable afterwards
+    assert sb.run("print(i > 0)").stdout.strip() == "True"

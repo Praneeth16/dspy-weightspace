@@ -10,6 +10,8 @@ from __future__ import annotations
 import contextlib
 import io
 import os
+import signal
+import threading
 import traceback
 from dataclasses import dataclass, field
 
@@ -19,6 +21,30 @@ import torch
 from .hf_lm import HFLocalLM, is_editable
 
 MAX_OUTPUT_CHARS = 10_000
+DEFAULT_TIME_LIMIT = 300.0
+
+
+class ExecTimeout(RuntimeError):
+    pass
+
+
+@contextlib.contextmanager
+def time_limit(seconds: float):
+    """Interrupt pure-Python loops after `seconds`. SIGALRM only works on the main thread; elsewhere it is a no-op."""
+    if not seconds or threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def _raise(signum, frame):
+        raise ExecTimeout(f"code block exceeded {seconds:.0f}s")
+
+    prev = signal.signal(signal.SIGALRM, _raise)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, prev)
 
 
 class EditRejected(ValueError):
@@ -37,9 +63,10 @@ class ExecResult:
 
 
 class PatchSandbox:
-    def __init__(self, lm: HFLocalLM, work_dir: str):
+    def __init__(self, lm: HFLocalLM, work_dir: str, time_limit_s: float = DEFAULT_TIME_LIMIT):
         self.lm = lm
         self.work_dir = work_dir
+        self.time_limit_s = time_limit_s
         os.makedirs(os.path.join(work_dir, "artifacts"), exist_ok=True)
         self.edits: dict[str, torch.Tensor] = {}
         self.ns: dict = {}
@@ -102,7 +129,10 @@ class PatchSandbox:
         err = None
         with torch.no_grad(), contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
             try:
-                exec(compile(src, "<patch>", "exec"), self.ns)
+                with time_limit(self.time_limit_s):
+                    exec(compile(src, "<patch>", "exec"), self.ns)
+            except ExecTimeout as e:
+                err = f"{e}. The kernel state is kept; split the work into smaller blocks or vectorize with torch."
             except Exception:
                 err = traceback.format_exc(limit=3)
         out = buf.getvalue()

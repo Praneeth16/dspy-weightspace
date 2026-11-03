@@ -174,6 +174,7 @@ class WeightPatchProposer:
             reply = self._ask(messages)
             messages.append({"role": "assistant", "content": reply})
             transcript.write(f"\n\n## assistant (turn {turn + 1})\n{reply}")
+            transcript.flush()
             blocks = BLOCK.findall(reply)
             if not blocks:
                 if self.probes.left <= 0 and sb.edits:
