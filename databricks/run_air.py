@@ -43,8 +43,7 @@ print(
 )
 
 mlflow.set_tracking_uri("databricks")
-if E.get("MLFLOW_EXPERIMENT"):
-    mlflow.set_experiment(E["MLFLOW_EXPERIMENT"])
+# AI Runtime creates the MLflow run and exports MLFLOW_RUN_ID; start_run() below attaches to it.
 
 lm = HFLocalLM(revision=BASE_REVISION, batch_size=16)
 prog = MathSolver(lm, max_new_tokens=MAX_NEW)
@@ -75,7 +74,7 @@ opt = WeightSpaceOptimizer(
     max_turns=MAX_TURNS,
     log_dir=f"{RUN_DIR}/optimizer",
 )
-with mlflow.start_run(run_name="weightspace-optimizer") as run:
+with mlflow.start_run() as run:
     mlflow.log_params(
         {
             "model": lm.model_name,

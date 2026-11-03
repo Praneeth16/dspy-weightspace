@@ -23,8 +23,7 @@ env_variables:
   N_DEV: "32"
   N_HOLDOUT: "48"
   MAX_NEW_TOKENS: "4096"
-  PASSES_PER_ROUND: "6"
-  MAX_METRIC_CALLS: "100"
-  MAX_TURNS: "30"
-  MLFLOW_EXPERIMENT: /Users/praneeth.paikray@databricks.com/dspy-weightspace/mlflow_experiment
+  PASSES_PER_ROUND: "4"
+  MAX_METRIC_CALLS: "80"
+  MAX_TURNS: "24"
   HF_HOME: /tmp/hf
