@@ -1,0 +1,32 @@
+{
+  "run_name": "dspy-weightspace-e2e",
+  "tasks": [
+    {
+      "task_key": "run",
+      "notebook_task": {
+        "notebook_path": "/Workspace/Users/__USER__/dspy-weightspace/databricks",
+        "base_parameters": {
+          "reflection_endpoint": "__REFLECTION_ENDPOINT__",
+          "catalog": "serverless_lakebase_praneeth_catalog",
+          "schema": "weightspace",
+          "n_dev": "48",
+          "n_holdout": "48",
+          "max_new_tokens": "2048",
+          "passes_per_round": "8",
+          "max_metric_calls": "200"
+        }
+      },
+      "environment_key": "gpu",
+      "timeout_seconds": 14400
+    }
+  ],
+  "environments": [
+    {
+      "environment_key": "gpu",
+      "spec": {
+        "client": "4",
+        "dependencies": ["git+https://github.com/Praneeth16/dspy-weightspace.git", "flash-linear-attention"]
+      }
+    }
+  ]
+}
