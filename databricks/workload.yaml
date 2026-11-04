@@ -5,7 +5,7 @@ experiment_name: dspy-weightspace
 mlflow_experiment_directory: /Workspace/Users/praneeth.paikray@databricks.com/dspy-weightspace
 mlflow_run_name: weightspace-e2e
 compute:
-  accelerator_type: GPU_1xA10
+  accelerator_type: GPU_1xH100
   num_accelerators: 1
 environment:
   version: databricks_ai_v6   # torch, transformers, vLLM preinstalled
@@ -19,13 +19,13 @@ timeout_minutes: 360
 max_retries: 0
 env_variables:
   WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
-  REFLECTION_ENDPOINT: databricks-claude-sonnet-5-5
+  REFLECTION_ENDPOINT: databricks-claude-opus-5-5
   N_DEV: "32"
   N_HOLDOUT: "48"
-  MAX_NEW_TOKENS: "4096"
-  PASSES_PER_ROUND: "4"
-  MAX_METRIC_CALLS: "80"
-  MAX_TURNS: "24"
+  MAX_NEW_TOKENS: "8192"
+  PASSES_PER_ROUND: "12"
+  MAX_METRIC_CALLS: "144"
+  MAX_TURNS: "40"
   EXTRA_SCALES: ""            # e.g. "1.6,2.4,3.2": also score W0 + k*(W_published - W0) on the holdout
   SEED_PATCH: ""              # "published" = warm-start from the Experiment-8 edit and ask the model to improve it
   HF_HOME: /tmp/hf

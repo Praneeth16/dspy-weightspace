@@ -17,7 +17,7 @@ string. A weight patch is also a string: a short script that edits named tensors
 
 ## Results
 
-Filled in from the Databricks run. Holdout GSM8K subset, thinking on, 4,096 new tokens max. Score = 0.4 correct + 0.3 terminated + 0.3 not looping (distinct 8-gram ratio over the tail >= 0.6).
+Filled in from the Databricks run. Holdout GSM8K subset, thinking on, 4,096 new tokens max. Score (runs 1-4) = 0.4 correct + 0.3 terminated + 0.3 not looping; from run 5 on, 0.96 / 0.02 / 0.02 (accuracy first).
 
 | Variant | Accuracy | Looping | Cut at limit | Mean tokens | n |
 |---|---|---|---|---|---|

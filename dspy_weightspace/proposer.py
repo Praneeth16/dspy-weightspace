@@ -40,9 +40,12 @@ repair that with targeted changes. No gradient descent, no training: analysis an
 HOW IT WILL BE MEASURED. The edited model is evaluated on held-out problems with the chat template, thinking \
 enabled, the user message "<problem>\\nPlease reason step by step, and put your final answer within \\boxed{{}}.", \
 temperature {temperature}, top_p {top_p}, top_k {top_k}, at most {max_tokens} new tokens. Score per problem = \
-0.4 * (last \\boxed{{}} answer correct) + 0.3 * (finished before the token limit) + 0.3 * (not looping, i.e. the \
-distinct 8-gram ratio over the tail of the generation is >= 0.6). The dominant failure at this budget is repeating \
-itself in its thinking ("Wait, let me re-read..." over and over) until it is cut off. Only weight values may change \
+0.96 * (last \\boxed{{}} answer correct) + 0.02 * (finished before the token limit) + 0.02 * (not looping, i.e. the \
+distinct 8-gram ratio over the tail is >= 0.6). ACCURACY IS WHAT COUNTS; termination and looping are diagnostics \
+that tell you why answers are wrong. The dominant failure at this budget is repeating itself in its thinking \
+("Wait, let me re-read..." over and over) until it is cut off, so a fix that stops the loops should show up as more \
+correct final answers. An edit that merely shortens or silences thinking without raising accuracy is not wanted. \
+Only weight values may change \
 (same tensor names \
 and shapes). Out of scope and refused by save_edit: input embedding / output head, the final norm, and multiplying \
 a whole tensor by a constant. Making the model skip or truncate thinking regardless of the problem is not wanted; \

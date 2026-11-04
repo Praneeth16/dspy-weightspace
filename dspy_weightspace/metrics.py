@@ -1,8 +1,9 @@
 """GEPA-shaped metric: (gold, pred, trace, pred_name, pred_trace) -> Prediction(score, feedback).
 
-Three signals per answer: correct, terminated, not looping. The blog judged edits by accuracy at 32k tokens. At
-notebook budgets (2k-4k tokens) almost nothing terminates, so the loop detector carries the signal the blog's
-"cut at limit" carried: a low distinct n-gram ratio over the tail of the generation.
+Three signals per answer: correct, terminated, not looping. Accuracy is what counts (0.96); termination and
+non-looping are 0.02 tie-breakers so equal-accuracy candidates prefer the one that stops repeating. Earlier weights
+of 0.4 / 0.3 / 0.3 let the optimizer raise the score while accuracy fell (see evidence/air_run4_warmstart).
+The feedback text still names loops and cut-offs explicitly; that is where the reflection model reads them.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import dspy
 BOXED = re.compile(r"\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}")
 NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 LOOP_NGRAM, LOOP_TAIL_WORDS, LOOP_THRESHOLD = 8, 600, 0.6
-W_CORRECT, W_TERMINATED, W_NOT_LOOPING = 0.4, 0.3, 0.3
+W_CORRECT, W_TERMINATED, W_NOT_LOOPING = 0.96, 0.02, 0.02
 
 
 def extract_answer(text: str) -> str | None:
