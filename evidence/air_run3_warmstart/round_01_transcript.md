@@ -4,9 +4,19 @@
 ```python
 # Hypothesis: inspect how large the current edit is relative to the original weights
 for n in edited():
-    w=load(n); o=load_original(n)
-    d=(w-o)
-    print(n, tuple(w.shape), 'frac changed', float((d!=0).float().mean()), 'rel norm', float(d.norm()/o.norm()), 'maxabs', float(d.abs().max()))
+    w = load(n)
+    o = load_original(n)
+    d = w - o
+    print(
+        n,
+        tuple(w.shape),
+        "frac changed",
+        float((d != 0).float().mean()),
+        "rel norm",
+        float(d.norm() / o.norm()),
+        "maxabs",
+        float(d.abs().max()),
+    )
 ```
 
 ## tool
@@ -747,11 +757,11 @@ paired: wrong->right 3, right->wrong 0, diff +0.250
 # Hypothesis: persist the current edit's deltas as artifacts so the final patch is standalone
 for n in edited():
     d = load(n) - load_original(n)
-    key = 'delta_' + n.split('layers.')[1].split('.')[0]
+    key = "delta_" + n.split("layers.")[1].split(".")[0]
     save_artifact(key, d)
-    print(key, float(d.abs().max()), int((d!=0).sum()))
+    print(key, float(d.abs().max()), int((d != 0).sum()))
     r = load_artifact(key)
-    print(float((r-d).abs().max()))
+    print(float((r - d).abs().max()))
 ```
 
 ## tool
@@ -765,18 +775,21 @@ delta_19 0.21484375 64928
 ## assistant (turn 5)
 ```python
 # Hypothesis: delta is concentrated in few neurons (columns) / rank-structured; inspect to decide whether scaling is feasible
-for l in (15,19):
-    d = load_artifact(f'delta_{l}')
-    cols = (d!=0).any(0).sum().item(); rows=(d!=0).any(1).sum().item()
+for l in (15, 19):
+    d = load_artifact(f"delta_{l}")
+    cols = (d != 0).any(0).sum().item()
+    rows = (d != 0).any(1).sum().item()
     cn = d.norm(dim=0)
-    top = torch.topk(cn,8)
-    print(l, 'cols',cols,'rows',rows, 'top col idx',top.indices.tolist(), [round(float(x),2) for x in top.values])
-    U,S,V = torch.linalg.svd(d, full_matrices=False)
-    print(' sv', [round(float(s),2) for s in S[:6]], 'energy top1', float(S[0]**2/(S**2).sum()))
+    top = torch.topk(cn, 8)
+    print(l, "cols", cols, "rows", rows, "top col idx", top.indices.tolist(), [round(float(x), 2) for x in top.values])
+    U, S, V = torch.linalg.svd(d, full_matrices=False)
+    print(" sv", [round(float(s), 2) for s in S[:6]], "energy top1", float(S[0] ** 2 / (S**2).sum()))
     # relation of delta to original on changed entries
-    o=load_original(f'model.layers.{l}.mlp.down_proj.weight')
-    m=d!=0
-    print(' ratio d/o mean', float((d[m]/o[m]).mean()), 'corr', float(torch.corrcoef(torch.stack([d[m],o[m]]))[0,1]))
+    o = load_original(f"model.layers.{l}.mlp.down_proj.weight")
+    m = d != 0
+    print(
+        " ratio d/o mean", float((d[m] / o[m]).mean()), "corr", float(torch.corrcoef(torch.stack([d[m], o[m]]))[0, 1])
+    )
 ```
 
 ## tool
@@ -792,21 +805,22 @@ for l in (15,19):
 ## assistant (turn 6)
 ```python
 # Hypothesis: delta is rank-1 (u v^T); compare u across layers and check its logit-lens effect
-us={}
-for l in (15,19):
-    d=load_artifact(f'delta_{l}')
-    U,S,V=torch.linalg.svd(d,full_matrices=False)
-    us[l]=(U[:,0],V[0],S[0])
-    print(l,'u norm',float(U[:,0].norm()),'v nnz',int((V[0].abs()>1e-6).sum()))
-print('cos u15,u19',float(us[15][0]@us[19][0]))
-E=load('model.embed_tokens.weight') if 'model.embed_tokens.weight' in NAMES else None
+us = {}
+for l in (15, 19):
+    d = load_artifact(f"delta_{l}")
+    U, S, V = torch.linalg.svd(d, full_matrices=False)
+    us[l] = (U[:, 0], V[0], S[0])
+    print(l, "u norm", float(U[:, 0].norm()), "v nnz", int((V[0].abs() > 1e-6).sum()))
+print("cos u15,u19", float(us[15][0] @ us[19][0]))
+E = load("model.embed_tokens.weight") if "model.embed_tokens.weight" in NAMES else None
 print(E is not None)
 if E is not None:
-    for l in (15,19):
-        u=us[l][0]; lg=E@u
-        for sgn in (1,-1):
-            idx=torch.topk(sgn*lg,12).indices.tolist()
-            print(l,sgn,[tok.decode([i]) for i in idx])
+    for l in (15, 19):
+        u = us[l][0]
+        lg = E @ u
+        for sgn in (1, -1):
+            idx = torch.topk(sgn * lg, 12).indices.tolist()
+            print(l, sgn, [tok.decode([i]) for i in idx])
 ```
 
 ## tool
@@ -890,10 +904,10 @@ paired: wrong->right 3, right->wrong 0, diff +0.250
 ## assistant (turn 11)
 ```python
 # Hypothesis: stronger scaling (2.4x) of the rank-1 delta reduces looping further without breaking accuracy
-for l in (15,19):
-    n=f'model.layers.{l}.mlp.down_proj.weight'
-    save_edit(n, load_original(n)+2.4*load_artifact(f'delta_{l}'))
-    print(l, float((load(n)-load_original(n)).abs().max()))
+for l in (15, 19):
+    n = f"model.layers.{l}.mlp.down_proj.weight"
+    save_edit(n, load_original(n) + 2.4 * load_artifact(f"delta_{l}"))
+    print(l, float((load(n) - load_original(n)).abs().max()))
 ```
 
 ## tool
@@ -944,10 +958,10 @@ No code block found. Reply with exactly one ```python, ```forward or ```patch bl
 ## assistant (turn 14)
 ```python
 # Hypothesis: 3.2x scaling of the rank-1 delta further reduces cut-offs; apply and verify
-for l in (15,19):
-    n=f'model.layers.{l}.mlp.down_proj.weight'
-    save_edit(n, load_original(n)+3.2*load_artifact(f'delta_{l}'))
-    print(l, float((load(n)-load_original(n)).abs().max()))
+for l in (15, 19):
+    n = f"model.layers.{l}.mlp.down_proj.weight"
+    save_edit(n, load_original(n) + 3.2 * load_artifact(f"delta_{l}"))
+    print(l, float((load(n) - load_original(n)).abs().max()))
 ```
 
 ## tool
@@ -1004,7 +1018,6 @@ Many generations are still cut off at the limit even without looping, and I did 
 ```python
 # Final edit: original weights plus 2.4x the rank-1 anti-repetition delta in two down_proj tensors
 for l in (15, 19):
-    n = f'model.layers.{l}.mlp.down_proj.weight'
-    save_edit(n, load_original(n) + 2.4 * load_artifact(f'delta_{l}'))
-
+    n = f"model.layers.{l}.mlp.down_proj.weight"
+    save_edit(n, load_original(n) + 2.4 * load_artifact(f"delta_{l}"))
 ```

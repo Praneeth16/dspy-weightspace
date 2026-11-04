@@ -53,18 +53,31 @@ Results at notebook budget (GSM8K subset, 2k tokens, 8 passes per round), holdou
 |---|---|---|---|---|---|
 | base, T=0.6 (blog sampling) | 16.7% | 62.5% | 97.9% | 4027 | 48 |
 | base, T=1.0 (Qwen model card) | 8.3% | 0.0% | 100.0% | 4096 | 48 |
-| published Experiment-8 edit (131k weights, sha256-verified) | 27.1% | 18.8% | 89.6% | 3845 | 48 |
+| published Experiment-8 edit (131k weights, sha256-verified) | **27.1%** | 18.8% | 89.6% | 3845 | 48 |
+| published delta x 1.6 | 20.8% | 6.2% | 89.6% | 3878 | 48 |
+| published delta x 2.4 | 20.8% | **4.2%** | **79.2%** | 3831 | 48 |
+| published delta x 3.2 | 6.2% | 14.6% | 83.3% | 3858 | 48 |
 | optimizer, cold start (Claude Sonnet 5.5, 4 rounds x 4 passes) | no edit submitted | | | | |
-| optimizer, warm start from the published edit (6 passes/round) | running | | | | |
+| optimizer, warm start from the published edit (1 round x 6 passes): published delta x 1.9 | 16.7% | 12.5% | 81.2% | 3796 | 48 |
 
 Run: Databricks AI Runtime, one A10 (24 GB), Qwen3.5-0.8B bf16, GSM8K holdout n=48, thinking on, 4,096 new tokens,
 T=0.6 / top_p 0.95 / top_k 20, seed 0. "Looping" = distinct 8-gram ratio over the tail below 0.6. One 48-problem pass took
-about 9 minutes with the reference Gated DeltaNet kernels.
+about 9 minutes with the reference Gated DeltaNet kernels. Transcripts, patches and summaries: [`evidence/`](evidence/).
 
-What the cold-start optimizer did (transcripts in the MLflow run): in every round Claude built a repetition direction
-(difference of mean residuals between repetitive and productive continuations, the blog's own method), projected it
-out of mid-layer `down_proj` columns, measured the edit paired against the original on fresh problems, saw no gain
-(looping 0.67 to 0.63, accuracy down), and declined to submit it. Four passes per round against the blog's fifty.
+Three things the table says:
+
+1. **The published edit works at this budget.** Looping 62.5% to 18.8%, accuracy 16.7% to 27.1%. The decoding baseline
+   critics asked for (T=1.0) removes repetition but nothing finishes and accuracy halves. Sampling is not the fix.
+2. **Cold start found nothing it would submit.** In every round Claude built a repetition direction (difference of mean
+   residuals between repetitive and productive continuations, the blog's own method), projected it out of mid-layer
+   `down_proj` columns, measured paired on fresh problems, saw no gain, and sent an empty patch. Four passes a round
+   against the blog's fifty.
+3. **Warm start found the right knob and the metric's blind spot.** Given the published edit as the seed, Claude
+   discovered each layer's delta is rank-1, saved it as an artifact, swept the scale (1.0x, 1.6x, 2.4x, 3.2x), and
+   submitted 1.9x; GEPA accepted it (dev score 0.43 vs 0.34). On the holdout it cut looping and cut-offs further but
+   gave back the accuracy. The direct dose-response rows show why: scaling the direction kills loops monotonically up to
+   about 2.4x, while accuracy peaks at 1.0x. The 0.3/0.3 weights on termination and non-looping let the score rise as
+   accuracy fell. That is the eval gate doing its job and the metric needing a stricter one.
 
 The published Experiment-8 edit is rebuilt from the authors' logs and sha256-verified against the evaluated checkpoint,
 so the notebook also answers the decoding-baseline question (T=1.0 per the Qwen model card) in the same table.

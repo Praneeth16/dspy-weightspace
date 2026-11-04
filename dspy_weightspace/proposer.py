@@ -196,33 +196,39 @@ class WeightPatchProposer:
                     break
                 obs = "No code block found. Reply with exactly one ```python, ```forward or ```patch block."
             else:
-                kind, body = blocks[0]
-                if kind == "patch":
-                    if not body.strip():
-                        final = ""
-                        break
-                    fresh, res = run_fresh(self.lm, body, self.work_dir)
-                    if res.ok and fresh.edits:
-                        final = body
-                        break
-                    why = res.error or "no save_edit calls"
-                    obs = f"patch failed when run in a fresh kernel:\n{why}\nFix and resend a ```patch block."
-                elif kind == "python":
-                    code_runs += 1
-                    if code_runs > self.max_code_runs:
-                        obs = f"Code run limit ({self.max_code_runs}) reached. Send your ```patch block now."
-                    else:
-                        res = sb.run(body)
-                        obs = (
-                            (res.stdout or "(no output)")
-                            + (f"\nERROR:\n{res.error}" if res.error else "")
-                            + f"\n[edited: {res.edits}]"
+                # Run every block in order: models often pair an edit (python) with a probe (forward) in one reply.
+                obs_parts = []
+                for kind, body in blocks:
+                    if kind == "patch":
+                        if not body.strip():
+                            final = ""
+                            break
+                        fresh, res = run_fresh(self.lm, body, self.work_dir)
+                        if res.ok and fresh.edits:
+                            final = body
+                            break
+                        why = res.error or "no save_edit calls"
+                        obs_parts.append(
+                            f"patch failed when run in a fresh kernel:\n{why}\nFix and resend a ```patch block."
                         )
-                else:
-                    try:
-                        obs = self.probes.dispatch(json.loads(body))
-                    except json.JSONDecodeError as e:
-                        obs = f"error: forward block is not valid JSON ({e})"
+                    elif kind == "python":
+                        code_runs += 1
+                        if code_runs > self.max_code_runs:
+                            obs_parts.append(
+                                f"Code run limit ({self.max_code_runs}) reached. Send your ```patch block now."
+                            )
+                        else:
+                            res = sb.run(body)
+                            err = f"\nERROR:\n{res.error}" if res.error else ""
+                            obs_parts.append((res.stdout or "(no output)") + err + f"\n[edited: {res.edits}]")
+                    else:
+                        try:
+                            obs_parts.append(self.probes.dispatch(json.loads(body)))
+                        except json.JSONDecodeError as e:
+                            obs_parts.append(f"error: forward block is not valid JSON ({e})")
+                if final is not None:
+                    break
+                obs = "\n\n".join(obs_parts)
             if self.probes.left <= 0 and final is None:
                 obs += "\n\nBudget spent. Send your final ```patch block (standalone script) now."
             messages.append({"role": "user", "content": obs})

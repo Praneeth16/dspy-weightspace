@@ -87,3 +87,28 @@ def test_probes_budget(tmp_path):
     assert "pass 1 (0 left)" in s1 and "cut_at_limit=1.000" in s1
     s2 = probes.dispatch({"type": "generate", "model": "original", "problems": ["p000"]})
     assert s2.startswith("error: forward-pass budget exhausted")
+
+
+def test_python_and_forward_in_one_reply_both_run(tmp_path):
+    """An edit block followed by a probe in the same reply must apply the edit before the probe runs."""
+    lm = FakeLM()
+    prog = MathSolver(lm, max_new_tokens=64)
+    probes = Probes(lm, prog, math_metric, examples(3), str(tmp_path / "p"), budget=2, max_items=4)
+    from dspy_weightspace.proposer import WeightPatchProposer
+
+    class OneShot:
+        def __init__(self):
+            self.replies = [
+                f"```python\n{PATCH}\n```\n"
+                '```forward\n{"type": "generate", "model": "both", "problems": ["p000"]}\n```',
+                f"```patch\n{PATCH}\n```",
+            ]
+
+        def __call__(self, messages=None, **kw):
+            return [self.replies.pop(0)]
+
+    prop = WeightPatchProposer(OneShot(), lm, probes, str(tmp_path), max_turns=4)
+    out = prop({COMPONENT: ""}, {COMPONENT: []}, [COMPONENT])
+    assert PATCH in out[COMPONENT]
+    t = (tmp_path / "round_01" / "transcript.md").read_text()
+    assert "[edited: ['" in t and "pass 1 (1 left)" in t and "edited: n=1" in t
