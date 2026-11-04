@@ -24,3 +24,4 @@ env_variables:
   SAMPLES: "2"
   MAX_TOKENS: "32768"
   HF_HOME: /tmp/hf
+  VLLM_USE_FLASHINFER_SAMPLER: "0"   # its JIT build needs curand.h, which the runtime image lacks

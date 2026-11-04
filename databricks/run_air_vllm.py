@@ -153,6 +153,9 @@ def main() -> None:
     with open(f"{run_dir}/results.md", "w") as f:
         f.write(table(rows) + "\n")
     print("SUMMARY " + json.dumps(rows), flush=True)
+    failed = [v for v in VARIANTS if v.split(":", 1)[0] not in rows]
+    if failed:
+        raise RuntimeError(f"variants failed: {failed}")
 
 
 if __name__ == "__main__":
