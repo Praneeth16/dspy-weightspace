@@ -13,6 +13,7 @@ import time
 import dspy
 import mlflow
 import torch
+from dspy.teleprompt.gepa import InstructionProposer
 
 from dspy_weightspace import HFLocalLM, MathSolver, load_gsm8k, math_metric
 from dspy_weightspace.baseline import results_table, score_rows
@@ -98,6 +99,8 @@ with mlflow.start_run() as run:
     gepa = dspy.GEPA(
         metric=edit_metric,
         reflection_lm=databricks_lm(REFLECTION_EP),
+        # The default JSONAdapter sends response_format, which Claude FMAPI endpoints reject with HTTP 400.
+        instruction_proposer=InstructionProposer(adapter=dspy.ChatAdapter()),
         max_metric_calls=GEPA_CALLS,
         reflection_minibatch_size=2,
         num_threads=1,
@@ -156,8 +159,6 @@ with mlflow.start_run() as run:
             },
         }
     )
-    if os.path.isdir(f"{RUN_DIR}/gepa"):
-        mlflow.log_artifacts(f"{RUN_DIR}/gepa", "gepa")
 
 print(table, flush=True)
 print("decision:", final.decision.to_json(), flush=True)

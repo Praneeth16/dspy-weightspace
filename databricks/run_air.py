@@ -115,7 +115,6 @@ with mlflow.start_run() as run:
             },
         }
     )
-    mlflow.log_artifacts(f"{RUN_DIR}/optimizer", "optimizer")
 
 print(table, flush=True)
 print(
