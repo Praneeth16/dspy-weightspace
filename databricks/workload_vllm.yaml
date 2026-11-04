@@ -1,0 +1,26 @@
+# Full-protocol vLLM eval (MATH-500, T=0.6, 32k tokens) of base, published edit and the optimizer's edits.
+#   databricks air run --file databricks/workload_vllm.yaml --profile <profile>
+experiment_name: dspy-weightspace
+mlflow_experiment_directory: /Workspace/Users/praneeth.paikray@databricks.com/dspy-weightspace
+mlflow_run_name: h100-vllm-math500
+compute:
+  accelerator_type: GPU_1xH100
+  num_accelerators: 1
+environment:
+  version: databricks_ai_v6   # vLLM preinstalled
+  dependencies:
+    - git+https://github.com/Praneeth16/dspy-weightspace.git
+    - math-verify
+code_source:
+  root_path: .
+command: python $CODE_SOURCE_PATH/run_air_vllm.py
+timeout_minutes: 360
+max_retries: 0
+env_variables:
+  WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
+  VARIANTS: base,published,cold:runs/20261104-063220,warm:runs/20261104-063705
+  DATASET: HuggingFaceH4/MATH-500
+  N: "500"
+  SAMPLES: "2"
+  MAX_TOKENS: "32768"
+  HF_HOME: /tmp/hf

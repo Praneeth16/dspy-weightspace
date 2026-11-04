@@ -4,8 +4,8 @@ Matches the protocol in RikiyaT/lm_understand-logs exp8_math/code/evaluate.py an
 verification (vLLM, seed 0, last \\boxed{} graded). Use on a GPU box to compare a patched checkpoint with the base
 and the published edit at full budget. Needs: pip install vllm math-verify
 
-    python scripts/eval_vllm.py --model Qwen/Qwen3.5-0.8B --n 48 --samples 2
-    python scripts/eval_vllm.py --model /path/to/patched_ckpt --n 48 --samples 2
+    python -m dspy_weightspace.vllm_eval --model Qwen/Qwen3.5-0.8B --n 48 --samples 2
+    python -m dspy_weightspace.vllm_eval --model /path/to/patched_ckpt --n 48 --samples 2
 """
 
 from __future__ import annotations
@@ -69,18 +69,14 @@ def main() -> None:
     with open(a.out, "w") as f:
         for r in rows:
             f.write(json.dumps(r) + "\n")
-    print(
-        json.dumps(
-            {
-                "model": a.model,
-                "generations": len(rows),
-                "accuracy": statistics.mean(correct),
-                "cut_at_limit": statistics.mean(cut),
-                "mean_tokens": statistics.mean(r["tokens"] for r in rows),
-            },
-            indent=2,
-        )
-    )
+    summary = {
+        "model": a.model,
+        "generations": len(rows),
+        "accuracy": statistics.mean(correct),
+        "cut_at_limit": statistics.mean(cut),
+        "mean_tokens": statistics.mean(r["tokens"] for r in rows),
+    }
+    print("RESULT " + json.dumps(summary), flush=True)
 
 
 if __name__ == "__main__":

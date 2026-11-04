@@ -54,7 +54,7 @@ Budget here is a small fraction of the blog's (50 passes at 32k tokens, 158 turn
 sha256-verified against the checkpoint they evaluated; the two rebuilt tensors are bit-identical to the ones in
 [ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming](https://huggingface.co/ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming)
 (the checkpoint Hugging Face's ML Intern rebuilt and scored at 51.0% MATH-500 with the full 32k-token protocol).
-For that full protocol on a GPU box, `scripts/eval_vllm.py` reproduces it with vLLM. The T=1.0 row is the Qwen model-card sampling that critics said
+For that full protocol on a GPU box, `python -m dspy_weightspace.vllm_eval` reproduces it with vLLM (`databricks/workload_vllm.yaml` runs it on AI Runtime for base, published and the optimizer's edits). The T=1.0 row is the Qwen model-card sampling that critics said
 should have been the baseline. Both sit in the same table as the optimizer's own edit.
 
 ## How it works
