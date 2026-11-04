@@ -25,5 +25,4 @@ env_variables:
   MAX_NEW_TOKENS: "8192"
   GEPA_CALLS: "40"
   SUBSET: "8"
-  FAST_KERNELS: "1"
   HF_HOME: /tmp/hf

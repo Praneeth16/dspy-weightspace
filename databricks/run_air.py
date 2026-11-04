@@ -9,15 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 import time
-
-if os.environ.get("FAST_KERNELS") == "1":
-    # Gated DeltaNet fast path needs both packages; the reference PyTorch path is ~4x slower. Failure is tolerated.
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "flash-linear-attention", "causal-conv1d"], check=False
-    )
 
 import mlflow
 import torch
