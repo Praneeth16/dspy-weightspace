@@ -49,7 +49,8 @@ def main() -> None:
         )
         for p, _ in probs
     ]
-    llm = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_tokens + 2048, seed=0)
+    # disable_log_stats=False: periodic throughput lines, since tqdm's carriage returns never reach batch-job logs.
+    llm = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_tokens + 2048, seed=0, disable_log_stats=False)
     sp = SamplingParams(
         n=a.samples, temperature=0.6, top_p=0.95, top_k=20, presence_penalty=1.5, max_tokens=a.max_tokens, seed=0
     )

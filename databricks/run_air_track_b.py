@@ -105,21 +105,11 @@ with mlflow.start_run() as run:
         reflection_minibatch_size=2,
         num_threads=1,
         track_stats=True,
-        log_dir=f"{RUN_DIR}/gepa",
+        # A GEPA_DIR holding gepa_state.bin resumes that optimization instead of starting over.
+        log_dir=E.get("GEPA_DIR") or f"{RUN_DIR}/gepa",
     )
     tuned = gepa.compile(editor, trainset=situations, valset=situations)
     t_gepa = time.time() - t0
-    try:
-        from dspy.experimental import ReAnchor
-
-        calibrated = ReAnchor(edit_metric, require_cache=False, log_dir=f"{RUN_DIR}/reanchor").compile(
-            tuned, trainset=situations
-        )
-        reanchor_report = calibrated.decide.fields if hasattr(calibrated, "decide") else {}
-    except Exception as e:  # noqa: BLE001
-        print("ReAnchor skipped:", e, flush=True)
-        calibrated, reanchor_report = tuned, {"error": str(e)}
-    wall = time.time() - t0
 
     # Final decision on the whole dev set's diagnostics, scored on the holdout.
     rows = {"base, T=0.6 (blog sampling)": score_rows(prog, hold, math_metric)}
@@ -130,13 +120,36 @@ with mlflow.start_run() as run:
     lm.apply_patch(published)
     full_rows["published edit at 1.0x (scale_published, s=1)"] = score_rows(prog, dev, math_metric)
     lm.reset()
-    final = calibrated(diagnostics=diagnostics_text(full_rows))
-    lm.reset()
-    if final.edits:
-        lm.apply_patch(final.edits)
-    rows["Track B decision editor"] = score_rows(prog, hold, math_metric)
-    changed, edited = lm.changed_entries(), lm.edited()
-    lm.reset()
+
+    def decide_and_score(program, label):
+        final = program(diagnostics=diagnostics_text(full_rows))
+        lm.reset()
+        if final.edits:
+            lm.apply_patch(final.edits)
+        rows[label] = score_rows(prog, hold, math_metric)
+        changed, edited = lm.changed_entries(), lm.edited()
+        lm.reset()
+        print(results_table(rows), "\ndecision:", final.decision.to_json(), flush=True)
+        with open(f"{RUN_DIR}/results.md", "w") as f:
+            f.write(results_table(rows) + "\n")
+        return final, changed, edited
+
+    # Score the GEPA result before ReAnchor: ReAnchor's fitting was OOM-killed once and took the GEPA result with it.
+    final, changed, edited = decide_and_score(tuned, "Track B decision editor (GEPA)")
+    reanchor_report = {"skipped": "REANCHOR=0"}
+    if E.get("REANCHOR", "1") != "0":
+        try:
+            from dspy.experimental import ReAnchor
+
+            calibrated = ReAnchor(edit_metric, require_cache=False, log_dir=f"{RUN_DIR}/reanchor").compile(
+                tuned, trainset=situations
+            )
+            reanchor_report = calibrated.decide.fields if hasattr(calibrated, "decide") else {}
+            final, changed, edited = decide_and_score(calibrated, "Track B decision editor (GEPA + ReAnchor)")
+        except Exception as e:  # noqa: BLE001
+            print("ReAnchor skipped:", e, flush=True)
+            reanchor_report = {"error": str(e)}
+    wall = time.time() - t0
 
     sb = PatchSandbox(lm, RUN_DIR)
     sb.edits = dict(final.edits)
