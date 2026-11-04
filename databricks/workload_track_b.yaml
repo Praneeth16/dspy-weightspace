@@ -1,0 +1,28 @@
+# Track B: decision-typed edits (dspy.GEPA + ReAnchor) on AI Runtime.
+#   databricks air run --file databricks/workload_track_b.yaml --profile <profile>
+experiment_name: dspy-weightspace
+mlflow_experiment_directory: /Workspace/Users/praneeth.paikray@databricks.com/dspy-weightspace
+mlflow_run_name: h100-trackb-decisions
+compute:
+  accelerator_type: GPU_1xH100
+  num_accelerators: 1
+environment:
+  version: databricks_ai_v6
+  dependencies:
+    - git+https://github.com/Praneeth16/dspy-weightspace.git
+    - flash-linear-attention
+code_source:
+  root_path: .
+command: python $CODE_SOURCE_PATH/run_air_track_b.py
+timeout_minutes: 300
+max_retries: 0
+env_variables:
+  WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
+  DECISION_ENDPOINT: databricks-claude-sonnet-5-5
+  REFLECTION_ENDPOINT: databricks-claude-opus-5-5
+  N_DEV: "32"
+  N_HOLDOUT: "48"
+  MAX_NEW_TOKENS: "8192"
+  GEPA_CALLS: "40"
+  SUBSET: "8"
+  HF_HOME: /tmp/hf
