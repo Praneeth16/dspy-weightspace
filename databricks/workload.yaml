@@ -22,10 +22,11 @@ env_variables:
   REFLECTION_ENDPOINT: databricks-claude-opus-5-5
   N_DEV: "32"
   N_HOLDOUT: "48"
-  MAX_NEW_TOKENS: "8192"
-  PASSES_PER_ROUND: "12"
-  MAX_METRIC_CALLS: "144"
-  MAX_TURNS: "40"
+  MAX_NEW_TOKENS: "4096"
+  PASSES_PER_ROUND: "8"
+  MAX_METRIC_CALLS: "112"
+  MAX_TURNS: "36"
   EXTRA_SCALES: ""            # e.g. "1.6,2.4,3.2": also score W0 + k*(W_published - W0) on the holdout
   SEED_PATCH: ""              # "published" = warm-start from the Experiment-8 edit and ask the model to improve it
+  FAST_KERNELS: "1"
   HF_HOME: /tmp/hf
