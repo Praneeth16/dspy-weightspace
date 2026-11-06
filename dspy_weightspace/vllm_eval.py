@@ -60,7 +60,8 @@ def main() -> None:
     for (p, gold), o in zip(probs, outs, strict=True):
         for c in o.outputs:
             text = c.text
-            final = text.rsplit("</think>", 1)[-1]
+            # As in the post's evaluate.py: thinking that never closed gives no answer, even if it wrote a \boxed{}.
+            final = text.rsplit("</think>", 1)[-1] if "</think>" in text else ""
             ok = bool(verify(parse(f"${gold}$"), parse(final)))
             correct.append(ok)
             cut.append(c.finish_reason == "length")
