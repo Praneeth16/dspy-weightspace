@@ -112,3 +112,18 @@ def test_python_and_forward_in_one_reply_both_run(tmp_path):
     assert PATCH in out[COMPONENT]
     t = (tmp_path / "round_01" / "transcript.md").read_text()
     assert "[edited: ['" in t and "pass 1 (1 left)" in t and "edited: n=1" in t
+
+
+def test_compile_without_valset_holds_out_selection_examples(tmp_path):
+    lm = FakeLM()
+    opt = WeightSpaceOptimizer(
+        math_metric,
+        ScriptedLM(),
+        max_metric_calls=20,
+        passes_per_round=2,
+        reflection_minibatch_size=2,
+        log_dir=str(tmp_path / "run"),
+        max_turns=6,
+    )
+    out = opt.compile(MathSolver(lm, max_new_tokens=64), trainset=examples(6))
+    assert len(out.detailed_results.val_subscores[0]) == 4

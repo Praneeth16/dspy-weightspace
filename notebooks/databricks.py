@@ -124,7 +124,7 @@ with mlflow.start_run(run_name="weightspace-optimizer") as run:
         }
     )
     t0 = time.time()
-    optimized = opt.compile(prog, trainset=dev, valset=dev)
+    optimized = opt.compile(prog, trainset=dev[: len(dev) // 3], valset=dev[len(dev) // 3 :])
     wall = time.time() - t0
     rows["optimizer-found edit"] = score_rows(optimized, hold, math_metric)
     lm.reset()

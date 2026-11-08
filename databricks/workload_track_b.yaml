@@ -20,7 +20,8 @@ env_variables:
   WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
   DECISION_ENDPOINT: databricks-claude-sonnet-5-5
   REFLECTION_ENDPOINT: databricks-claude-opus-5-5
-  N_DEV: "32"
+  N_DEV: "48"
+  N_FEEDBACK: "16"
   N_HOLDOUT: "48"
   MAX_NEW_TOKENS: "4096"
   GEPA_CALLS: "40"

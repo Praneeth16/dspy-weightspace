@@ -35,6 +35,11 @@ class WeightSpaceOptimizer(Teleprompter):
         reflection_minibatch_size: examples shown to the reflection LM per round.
         seed_patch: optional starting patch script (for example the published Experiment 8 edit).
         log_dir: transcripts, probe outputs, artifacts and GEPA state.
+
+    ``compile(trainset, valset)``: the reflection LM probes and reads feedback on ``trainset`` only; GEPA selects
+    candidates on ``valset``. Keep them disjoint, and keep the final test set out of both: with one set for feedback and
+    selection, an edit can win on the examples it was written against and lose on new ones. Without a ``valset`` the
+    last two thirds of ``trainset`` become the selection set.
     """
 
     def __init__(
@@ -67,7 +72,9 @@ class WeightSpaceOptimizer(Teleprompter):
         lm = getattr(student, "lm", None)
         if not isinstance(lm, HFLocalLM):
             raise ValueError("student.lm must be an HFLocalLM (in-process weights are required to patch them)")
-        valset = valset or trainset
+        if valset is None:
+            cut = max(1, len(trainset) // 3)
+            trainset, valset = trainset[:cut], trainset[cut:]
         os.makedirs(self.log_dir, exist_ok=True)
 
         probes = Probes(

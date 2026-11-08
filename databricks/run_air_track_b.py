@@ -1,7 +1,7 @@
 """Track B on AI Runtime: decision-typed weight edits, tuned by dspy.GEPA and calibrated by ReAnchor.
 
 Env: WS_VOLUME, DECISION_ENDPOINT (LM that makes the decisions), REFLECTION_ENDPOINT (GEPA's reflection LM),
-N_DEV, N_HOLDOUT, MAX_NEW_TOKENS, GEPA_CALLS, SUBSET.
+N_DEV, N_FEEDBACK, N_HOLDOUT, MAX_NEW_TOKENS, GEPA_CALLS, SUBSET.
 """
 
 from __future__ import annotations
@@ -26,7 +26,9 @@ E = os.environ
 VOL = E["WS_VOLUME"]
 DECISION_EP = E.get("DECISION_ENDPOINT", "databricks-claude-sonnet-5-5")
 REFLECTION_EP = E.get("REFLECTION_ENDPOINT", "databricks-claude-opus-5-5")
-N_DEV, N_HOLD = int(E.get("N_DEV", 32)), int(E.get("N_HOLDOUT", 48))
+N_DEV, N_HOLD = int(E.get("N_DEV", 48)), int(E.get("N_HOLDOUT", 48))
+# Situations from the first N_FEEDBACK dev problems give GEPA its reflection feedback; the rest select candidates.
+N_FEEDBACK = int(E.get("N_FEEDBACK", 16))
 MAX_NEW, GEPA_CALLS, SUBSET = int(E.get("MAX_NEW_TOKENS", 8192)), int(E.get("GEPA_CALLS", 40)), int(E.get("SUBSET", 8))
 RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-trackb"
 os.makedirs(RUN_DIR, exist_ok=True)
@@ -62,7 +64,8 @@ for k, sub in enumerate(subsets):
     lm.apply_patch(published)
     rows["published edit at 1.0x (scale_published, s=1)"] = score_rows(prog, sub, math_metric)
     lm.reset()
-    situations.append(dspy.Example(diagnostics=diagnostics_text(rows), subset=k).with_inputs("diagnostics"))
+    role = "feedback" if (k + 1) * SUBSET <= N_FEEDBACK else "selection"
+    situations.append(dspy.Example(diagnostics=diagnostics_text(rows), subset=k, role=role).with_inputs("diagnostics"))
     print(f"situation {k}: {rows}", flush=True)
 
 
@@ -90,6 +93,7 @@ with mlflow.start_run() as run:
             "decision_lm": DECISION_EP,
             "reflection_lm": REFLECTION_EP,
             "n_dev": N_DEV,
+            "n_feedback": N_FEEDBACK,
             "n_holdout": N_HOLD,
             "max_new_tokens": MAX_NEW,
             "gepa_calls": GEPA_CALLS,
@@ -108,7 +112,9 @@ with mlflow.start_run() as run:
         # A GEPA_DIR holding gepa_state.bin resumes that optimization instead of starting over.
         log_dir=E.get("GEPA_DIR") or f"{RUN_DIR}/gepa",
     )
-    tuned = gepa.compile(editor, trainset=situations, valset=situations)
+    feedback = [s for s in situations if s.role == "feedback"]
+    selection = [s for s in situations if s.role == "selection"]
+    tuned = gepa.compile(editor, trainset=feedback, valset=selection)
     t_gepa = time.time() - t0
 
     # Final decision on the whole dev set's diagnostics, scored on the holdout.

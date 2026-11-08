@@ -20,7 +20,8 @@ max_retries: 0
 env_variables:
   WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
   REFLECTION_ENDPOINT: databricks-claude-opus-5-5
-  N_DEV: "32"
+  N_DEV: "48"                 # first N_FEEDBACK feed the proposer, the rest select candidates
+  N_FEEDBACK: "16"
   N_HOLDOUT: "48"
   MAX_NEW_TOKENS: "4096"
   PASSES_PER_ROUND: "8"

@@ -33,7 +33,7 @@ opt = WeightSpaceOptimizer(
     log_dir="runs/live_mini",
 )
 t0 = time.time()
-out = opt.compile(prog, trainset=dev, valset=dev)
+out = opt.compile(prog, trainset=dev[:2], valset=dev[2:])
 print(
     f"\ncompile done in {(time.time() - t0) / 60:.1f} min; candidates={len(out.detailed_results.candidates)} "
     f"metric_calls={out.detailed_results.total_metric_calls}"

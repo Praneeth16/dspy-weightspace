@@ -1,8 +1,8 @@
 """End-to-end run on Databricks AI Runtime (serverless GPU). Script twin of notebooks/databricks.py.
 
-Configured by environment variables (set in workload.yaml): WS_VOLUME, REFLECTION_ENDPOINT, N_DEV, N_HOLDOUT,
-MAX_NEW_TOKENS, PASSES_PER_ROUND, MAX_METRIC_CALLS, MAX_TURNS, MLFLOW_EXPERIMENT. Writes results.md, patch.py and
-summary.json under $WS_VOLUME/runs/<timestamp>/ and logs the run to MLflow.
+Configured by environment variables (set in workload.yaml): WS_VOLUME, REFLECTION_ENDPOINT, N_DEV, N_FEEDBACK,
+N_HOLDOUT, MAX_NEW_TOKENS, PASSES_PER_ROUND, MAX_METRIC_CALLS, MAX_TURNS, SCORE_CANDIDATES. Writes results.md,
+patch.py, candidate_curve.json and summary.json under $WS_VOLUME/runs/<timestamp>/ and logs the run to MLflow.
 """
 
 from __future__ import annotations
@@ -15,14 +15,19 @@ import mlflow
 import torch
 
 from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_gsm8k, math_metric
+from dspy_weightspace.adapter import COMPONENT
 from dspy_weightspace.baseline import results_table, score_rows
 from dspy_weightspace.published_edit import BASE_REVISION, as_patch_script, build
 from dspy_weightspace.reflection import databricks_lm
+from dspy_weightspace.sandbox import run_fresh
 
 E = os.environ
 VOL = E["WS_VOLUME"]
 ENDPOINT = E.get("REFLECTION_ENDPOINT", "databricks-claude-sonnet-5-5")
-N_DEV, N_HOLD = int(E.get("N_DEV", 32)), int(E.get("N_HOLDOUT", 48))
+N_DEV, N_HOLD = int(E.get("N_DEV", 48)), int(E.get("N_HOLDOUT", 48))
+# Dev splits into feedback (probes, reflection minibatches) and selection (GEPA valset); the holdout is never seen.
+N_FEEDBACK = int(E.get("N_FEEDBACK", 16))
+SCORE_CANDIDATES = E.get("SCORE_CANDIDATES", "1") != "0"
 MAX_NEW, PASSES = int(E.get("MAX_NEW_TOKENS", 4096)), int(E.get("PASSES_PER_ROUND", 6))
 METRIC_CALLS, MAX_TURNS = int(E.get("MAX_METRIC_CALLS", 100)), int(E.get("MAX_TURNS", 30))
 SEED_PATCH = as_patch_script() if E.get("SEED_PATCH", "") == "published" else ""
@@ -49,6 +54,7 @@ mlflow.set_tracking_uri("databricks")
 lm = HFLocalLM(revision=BASE_REVISION, batch_size=16)
 prog = MathSolver(lm, max_new_tokens=MAX_NEW)
 dev, hold = load_gsm8k(n_dev=N_DEV, n_holdout=N_HOLD)
+feedback, select = dev[:N_FEEDBACK], dev[N_FEEDBACK:]
 print(lm.device, lm.dtype, type(lm.hf).__name__, len(lm.names), "tensors", flush=True)
 
 rows = {}
@@ -87,6 +93,7 @@ with mlflow.start_run() as run:
             "model": lm.model_name,
             "reflection": ENDPOINT,
             "n_dev": N_DEV,
+            "n_feedback": N_FEEDBACK,
             "n_holdout": N_HOLD,
             "max_new_tokens": MAX_NEW,
             "passes_per_round": PASSES,
@@ -96,10 +103,30 @@ with mlflow.start_run() as run:
         }
     )
     t0 = time.time()
-    optimized = opt.compile(prog, trainset=dev, valset=dev)
+    optimized = opt.compile(prog, trainset=feedback, valset=select)
     wall = time.time() - t0
     rows["optimizer-found edit"] = score_rows(optimized, hold, math_metric)
     lm.reset()
+    # Retrospective holdout score of every candidate, after selection is final: shows whether selection-set gains
+    # carried to new problems. These scores never feed back into the search.
+    curve = []
+    if SCORE_CANDIDATES:
+        res = optimized.detailed_results
+        for i, cand in enumerate(res.candidates):
+            src = cand[COMPONENT]
+            sb, out = run_fresh(lm, src, f"{RUN_DIR}/optimizer") if src.strip() else (None, None)
+            if out is not None and not out.ok:
+                curve.append({"candidate": i, "error": out.error[:300]})
+                continue
+            if sb is not None:
+                sb.apply()
+            r = score_rows(prog, hold, math_metric)
+            lm.reset()
+            curve.append({"candidate": i, "parents": res.parents[i], "selection": res.val_aggregate_scores[i], **r})
+            print("candidate", curve[-1], flush=True)
+        with open(f"{RUN_DIR}/candidate_curve.json", "w") as f:
+            json.dump(curve, f, indent=2)
+        mlflow.log_text(json.dumps(curve, indent=2), "candidate_curve.json")
     table = results_table(rows)
     mlflow.log_text(optimized.patch_src or "# no edit", "patch.py")
     mlflow.log_text(table, "results.md")
@@ -131,6 +158,7 @@ out = {
     "edited_tensors": optimized.edited_tensors,
     "wall_seconds": wall,
     "gepa_candidates": len(optimized.detailed_results.candidates),
+    "candidate_curve": curve,
     "run_dir": RUN_DIR,
     "mlflow_run_id": run.info.run_id,
 }
