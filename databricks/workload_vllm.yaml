@@ -7,10 +7,11 @@ compute:
   accelerator_type: GPU_1xH100
   num_accelerators: 1
 environment:
-  version: databricks_ai_v6   # vLLM preinstalled
+  version: databricks_ai_v6
   dependencies:
     - git+https://github.com/Praneeth16/dspy-weightspace.git
     - math-verify
+    - vllm==0.33.0              # the preinstalled 0.24 ran ~15x slower than the HF verification's 0.33 on this model
 code_source:
   root_path: .
 command: python $CODE_SOURCE_PATH/run_air_vllm.py

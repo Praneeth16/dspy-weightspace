@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 
 INSTRUCTION = "Please reason step by step, and put your final answer within \\boxed{}."
@@ -25,6 +26,7 @@ def main() -> None:
     ap.add_argument("--samples", type=int, default=2)
     ap.add_argument("--max-tokens", type=int, default=32768)
     ap.add_argument("--out", default="eval_vllm.jsonl")
+    ap.add_argument("--chunk", type=int, default=0, help="problems per generate() call; 0 = all at once")
     a = ap.parse_args()
 
     from datasets import load_dataset
@@ -54,28 +56,45 @@ def main() -> None:
     sp = SamplingParams(
         n=a.samples, temperature=0.6, top_p=0.95, top_k=20, presence_penalty=1.5, max_tokens=a.max_tokens, seed=0
     )
-    outs = llm.generate(prompts, sp)
 
-    correct, cut, rows = [], [], []
-    for (p, gold), o in zip(probs, outs, strict=True):
-        for c in o.outputs:
-            text = c.text
-            # As in the post's evaluate.py: thinking that never closed gives no answer, even if it wrote a \boxed{}.
-            final = text.rsplit("</think>", 1)[-1] if "</think>" in text else ""
-            ok = bool(verify(parse(f"${gold}$"), parse(final)))
-            correct.append(ok)
-            cut.append(c.finish_reason == "length")
-            rows.append(
-                {"problem": p[:200], "gold": gold, "correct": ok, "finish": c.finish_reason, "tokens": len(c.token_ids)}
-            )
-    with open(a.out, "w") as f:
-        for r in rows:
-            f.write(json.dumps(r) + "\n")
+    # The file is rewritten after every chunk (UC volumes take whole-file writes, not appends) and finished problems
+    # are skipped on restart, so a timed-out job keeps its work.
+    rows = []
+    if os.path.exists(a.out):
+        with open(a.out) as f:
+            rows = [json.loads(line) for line in f if line.strip()]
+    done = {r["idx"] for r in rows}
+    todo = [i for i in range(len(probs)) if i not in done]
+    print(f"{len(done)} problems already scored, {len(todo)} to go", flush=True)
+    step = a.chunk or len(todo) or 1
+    for start in range(0, len(todo), step):
+        ids = todo[start : start + step]
+        outs = llm.generate([prompts[i] for i in ids], sp)
+        for i, o in zip(ids, outs, strict=True):
+            p, gold = probs[i]
+            for c in o.outputs:
+                text = c.text
+                # As in the post's evaluate.py: thinking that never closed gives no answer, even with a \boxed{}.
+                final = text.rsplit("</think>", 1)[-1] if "</think>" in text else ""
+                row = {
+                    "idx": i,
+                    "problem": p[:200],
+                    "gold": gold,
+                    "correct": bool(verify(parse(f"${gold}$"), parse(final))),
+                    "finish": c.finish_reason,
+                    "tokens": len(c.token_ids),
+                    "answer": final[-400:],
+                }
+                rows.append(row)
+        with open(a.out, "w") as f:
+            f.writelines(json.dumps(r) + "\n" for r in rows)
+        print(f"chunk done: {start + len(ids)}/{len(todo)} problems", flush=True)
+
     summary = {
         "model": a.model,
         "generations": len(rows),
-        "accuracy": statistics.mean(correct),
-        "cut_at_limit": statistics.mean(cut),
+        "accuracy": statistics.mean(r["correct"] for r in rows),
+        "cut_at_limit": statistics.mean(r["finish"] == "length" for r in rows),
         "mean_tokens": statistics.mean(r["tokens"] for r in rows),
     }
     print("RESULT " + json.dumps(summary), flush=True)

@@ -4,7 +4,7 @@ Each edited variant is a copy of the base checkpoint with only the edited tensor
 architecture and config as for the base model. Each variant runs in its own process because vLLM holds GPU memory
 until exit.
 
-Env: WS_VOLUME, DATASET, N, SAMPLES, MAX_TOKENS, VARIANTS = comma list of
+Env: WS_VOLUME, DATASET, N, SAMPLES, MAX_TOKENS, CHUNK, RUN_DIR, VARIANTS = comma list of
   base | published | <label>:<run dir under WS_VOLUME>   (the run dir's patch.py, replayed on its optimizer artifacts)
 """
 
@@ -33,6 +33,7 @@ VOL = E["WS_VOLUME"]
 VARIANTS = [v.strip() for v in E.get("VARIANTS", "base,published").split(",") if v.strip()]
 DATASET = E.get("DATASET", "HuggingFaceH4/MATH-500")
 N, SAMPLES, MAX_TOKENS = int(E.get("N", 500)), int(E.get("SAMPLES", 2)), int(E.get("MAX_TOKENS", 32768))
+CHUNK = int(E.get("CHUNK", 100))
 PUBLISHED = [
     "model.language_model.layers.15.mlp.down_proj.weight",
     "model.language_model.layers.19.mlp.down_proj.weight",
@@ -87,6 +88,7 @@ def checkpoint(base_dir: str, label: str, edits: dict[str, torch.Tensor]) -> tup
 def evaluate(path: str, out: str) -> dict:
     cmd = [sys.executable, "-m", "dspy_weightspace.vllm_eval", "--model", path, "--dataset", DATASET]
     cmd += ["--n", str(N), "--samples", str(SAMPLES), "--max-tokens", str(MAX_TOKENS), "--out", out]
+    cmd += ["--chunk", str(CHUNK)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
     result = None
     for line in proc.stdout:
@@ -112,7 +114,8 @@ def table(rows: dict[str, dict]) -> str:
 
 
 def main() -> None:
-    run_dir = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-vllm"
+    # RUN_DIR (under WS_VOLUME) reuses an earlier run's directory: finished problems in its .jsonl files are kept.
+    run_dir = f"{VOL}/{E['RUN_DIR']}" if E.get("RUN_DIR") else f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-vllm"
     os.makedirs(run_dir, exist_ok=True)
     print(
         {
