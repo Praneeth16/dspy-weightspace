@@ -87,6 +87,12 @@ def checkpoint(base_dir: str, label: str, edits: dict[str, torch.Tensor]) -> tup
     return out, changed
 
 
+def variant_label(variant: str) -> str:
+    """Result label: the variant name plus any non-default protocol or penalty, so runs never share a file."""
+    label = variant.split(":", 1)[0] + (f"-{PROTOCOL}" if PROTOCOL != "think35" else "")
+    return label + (f"-pp{PRESENCE:g}" if PRESENCE != 1.5 else "")
+
+
 def drop_stale_flash_attn() -> None:
     """The image's flash-attn is compiled against its own torch; a newer vLLM brings a newer torch, and vLLM then
     imports the stale extension (undefined symbol) for the vision tower's rotary embedding. vLLM ships its own
@@ -174,8 +180,7 @@ def main() -> None:
             }
         )
         for i, variant in enumerate(VARIANTS):
-            label = variant.split(":", 1)[0] + (f"-{PROTOCOL}" if PROTOCOL != "think35" else "")
-            label += f"-pp{PRESENCE:g}" if PRESENCE != 1.5 else ""
+            label = variant_label(variant)
             t0 = time.time()
             try:
                 path, changed = checkpoint(base_dir, label, edits_for(variant, lm))
@@ -195,7 +200,7 @@ def main() -> None:
     with open(f"{run_dir}/results.md", "w") as f:
         f.write(table(rows) + "\n")
     print("SUMMARY " + json.dumps(rows), flush=True)
-    failed = [v for v in VARIANTS if v.split(":", 1)[0] not in rows]
+    failed = [v for v in VARIANTS if variant_label(v) not in rows]
     if failed:
         raise RuntimeError(f"variants failed: {failed}")
 
