@@ -30,3 +30,31 @@ def load_gsm8k(n_dev: int = 48, n_holdout: int = 48, seed: int = 0) -> tuple[lis
 
 def to_chat(problem: str) -> list[dict[str, str]]:
     return [{"role": "user", "content": problem + SUFFIX}]
+
+
+def load_math(
+    n_dev: int = 48, n_holdout: int = 48, seed: int = 0, levels: tuple[int, ...] = (3, 4, 5)
+) -> tuple[list[dspy.Example], list[dspy.Example]]:
+    """MATH train split (MATH-500 is drawn from the test split, so none of these are test problems), harder levels
+    only: at levels 1-2 the base model rarely loops, so they say little about a loop edit."""
+    from datasets import load_dataset
+
+    from .metrics import boxed_all
+
+    ds = load_dataset("DigitalLearningGmbH/MATH-lighteval", "default", split="train")
+    keep = {f"Level {k}" for k in levels}
+    idx = [i for i, lv in enumerate(ds["level"]) if lv in keep]
+    random.Random(seed).shuffle(idx)
+    exs = []
+    for i in idx:
+        r = ds[i]
+        boxed = boxed_all(r["solution"])
+        if boxed:
+            exs.append(
+                dspy.Example(problem=r["problem"], answer=boxed[-1].strip(), rationale=r["solution"]).with_inputs(
+                    "problem"
+                )
+            )
+        if len(exs) == n_dev + n_holdout:
+            break
+    return exs[:n_dev], exs[n_dev:]

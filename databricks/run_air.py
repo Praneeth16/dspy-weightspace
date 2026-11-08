@@ -1,8 +1,9 @@
 """End-to-end run on Databricks AI Runtime (serverless GPU). Script twin of notebooks/databricks.py.
 
 Configured by environment variables (set in workload.yaml): WS_VOLUME, REFLECTION_ENDPOINT, N_DEV, N_FEEDBACK,
-N_HOLDOUT, MAX_NEW_TOKENS, PASSES_PER_ROUND, MAX_METRIC_CALLS, MAX_TURNS, SCORE_CANDIDATES. Writes results.md,
-patch.py, candidate_curve.json and summary.json under $WS_VOLUME/runs/<timestamp>/ and logs the run to MLflow.
+N_HOLDOUT, MAX_NEW_TOKENS, PASSES_PER_ROUND, MAX_METRIC_CALLS, MAX_TURNS, SCORE_CANDIDATES, DATA, GEN_BACKEND,
+VLLM_GPU_UTIL. Writes results.md, patch.py, candidate_curve.json and summary.json under $WS_VOLUME/runs/<timestamp>/
+and logs the run to MLflow.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import time
 import mlflow
 import torch
 
-from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_gsm8k, math_metric
+from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_gsm8k, load_math, math_metric
 from dspy_weightspace.adapter import COMPONENT
 from dspy_weightspace.baseline import results_table, score_rows
 from dspy_weightspace.published_edit import BASE_REVISION, as_patch_script, build
@@ -28,6 +29,9 @@ N_DEV, N_HOLD = int(E.get("N_DEV", 48)), int(E.get("N_HOLDOUT", 48))
 # Dev splits into feedback (probes, reflection minibatches) and selection (GEPA valset); the holdout is never seen.
 N_FEEDBACK = int(E.get("N_FEEDBACK", 16))
 SCORE_CANDIDATES = E.get("SCORE_CANDIDATES", "1") != "0"
+# DATA=math selects on MATH-train (closer to the MATH-500 test than GSM8K); GEN_BACKEND=vllm generates with vLLM
+# (with the eval's sampling, presence penalty included) so long traces are affordable.
+DATA, GEN_BACKEND = E.get("DATA", "gsm8k"), E.get("GEN_BACKEND", "hf")
 MAX_NEW, PASSES = int(E.get("MAX_NEW_TOKENS", 4096)), int(E.get("PASSES_PER_ROUND", 6))
 METRIC_CALLS, MAX_TURNS = int(E.get("MAX_METRIC_CALLS", 100)), int(E.get("MAX_TURNS", 30))
 SEED_PATCH = as_patch_script() if E.get("SEED_PATCH", "") == "published" else ""
@@ -39,6 +43,8 @@ print(
         "n_dev": N_DEV,
         "n_holdout": N_HOLD,
         "max_new_tokens": MAX_NEW,
+        "data": DATA,
+        "gen_backend": GEN_BACKEND,
         "passes": PASSES,
         "metric_calls": METRIC_CALLS,
         "max_turns": MAX_TURNS,
@@ -51,9 +57,19 @@ print(
 mlflow.set_tracking_uri("databricks")
 # AI Runtime creates the MLflow run and exports MLFLOW_RUN_ID; start_run() below attaches to it.
 
-lm = HFLocalLM(revision=BASE_REVISION, batch_size=16)
+backend = None
+if GEN_BACKEND == "vllm":
+    from huggingface_hub import snapshot_download
+
+    from dspy_weightspace.vllm_backend import VLLMBackend
+
+    model_dir = snapshot_download("Qwen/Qwen3.5-0.8B", revision=BASE_REVISION)
+    backend = VLLMBackend(
+        model_dir, max_model_len=MAX_NEW + 2048, gpu_memory_utilization=float(E.get("VLLM_GPU_UTIL", 0.5))
+    )
+lm = HFLocalLM(revision=BASE_REVISION, batch_size=16, gen_backend=backend)
 prog = MathSolver(lm, max_new_tokens=MAX_NEW)
-dev, hold = load_gsm8k(n_dev=N_DEV, n_holdout=N_HOLD)
+dev, hold = (load_math if DATA == "math" else load_gsm8k)(n_dev=N_DEV, n_holdout=N_HOLD)
 feedback, select = dev[:N_FEEDBACK], dev[N_FEEDBACK:]
 print(lm.device, lm.dtype, type(lm.hf).__name__, len(lm.names), "tensors", flush=True)
 
@@ -96,6 +112,8 @@ with mlflow.start_run() as run:
             "n_feedback": N_FEEDBACK,
             "n_holdout": N_HOLD,
             "max_new_tokens": MAX_NEW,
+            "data": DATA,
+            "gen_backend": GEN_BACKEND,
             "passes_per_round": PASSES,
             "max_metric_calls": METRIC_CALLS,
             "max_turns": MAX_TURNS,

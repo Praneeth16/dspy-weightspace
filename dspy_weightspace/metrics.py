@@ -8,13 +8,29 @@ The feedback text still names loops and cut-offs explicitly; that is where the r
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections import Counter
 
 import dspy
 
-BOXED = re.compile(r"\\boxed\{((?:[^{}]|\{[^{}]*\})*)\}")
+
+def boxed_all(text: str) -> list[str]:
+    """Contents of every \\boxed{...}, braces matched to any depth (MATH answers nest: \\frac{\\sqrt{3}}{2})."""
+    out, start = [], 0
+    while (i := text.find("\\boxed{", start)) != -1:
+        j, depth = i + len("\\boxed{"), 1
+        while j < len(text) and depth:
+            depth += {"{": 1, "}": -1}.get(text[j], 0)
+            j += 1
+        if depth:
+            break
+        out.append(text[i + len("\\boxed{") : j - 1])
+        start = j
+    return out
+
+
 NUMBER = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 LOOP_NGRAM, LOOP_TAIL_WORDS, LOOP_THRESHOLD = 8, 600, 0.6
 W_CORRECT, W_TERMINATED, W_NOT_LOOPING = 0.96, 0.02, 0.02
@@ -22,7 +38,7 @@ W_CORRECT, W_TERMINATED, W_NOT_LOOPING = 0.96, 0.02, 0.02
 
 def extract_answer(text: str) -> str | None:
     final = text.rsplit("</think>", 1)[-1] if "</think>" in text else text
-    boxed = BOXED.findall(final) or BOXED.findall(text)
+    boxed = boxed_all(final) or boxed_all(text)
     if boxed:
         return boxed[-1].strip()
     nums = NUMBER.findall(final)
@@ -43,7 +59,19 @@ def normalize(s: str) -> str:
 
 
 def is_correct(pred: str | None, gold: str) -> bool:
-    return pred is not None and normalize(pred) == normalize(gold)
+    """Normalized string match, then math_verify when installed (the final eval's grader: \\frac{1}{2} == 0.5)."""
+    if pred is None:
+        return False
+    if normalize(pred) == normalize(gold):
+        return True
+    try:
+        from math_verify import parse, verify
+    except ImportError:
+        return False
+    logging.getLogger("math_verify").setLevel(logging.ERROR)
+    # Timeouts off: math_verify's own SIGALRM would clash with the sandbox's, and answers here are short strings.
+    g, t = parse(f"${gold}$", parsing_timeout=None), parse(f"${pred}$", parsing_timeout=None)
+    return bool(g and t and verify(g, t, timeout_seconds=None))
 
 
 def repetition(text: str, k: int = LOOP_NGRAM, tail: int = LOOP_TAIL_WORDS) -> tuple[float, str]:

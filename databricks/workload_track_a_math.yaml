@@ -1,0 +1,37 @@
+# Track A selected on MATH-train with vLLM generation (eval sampling, 16k tokens), so selection resembles the test.
+#   databricks air run --file databricks/workload_track_a_math.yaml --profile <profile>   (SEED_PATCH=published: warm)
+experiment_name: dspy-weightspace
+mlflow_experiment_directory: /Workspace/Users/praneeth.paikray@databricks.com/dspy-weightspace
+mlflow_run_name: h100-track-a-math
+compute:
+  accelerator_type: GPU_1xH100
+  num_accelerators: 1
+environment:
+  version: databricks_ai_v6
+  dependencies:
+    - git+https://github.com/Praneeth16/dspy-weightspace.git
+    - math-verify
+    - vllm==0.33.0
+code_source:
+  root_path: .
+command: python $CODE_SOURCE_PATH/run_air.py
+timeout_minutes: 720
+max_retries: 0
+env_variables:
+  WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
+  REFLECTION_ENDPOINT: databricks-claude-opus-5-5
+  DATA: math
+  GEN_BACKEND: vllm
+  VLLM_GPU_UTIL: "0.5"
+  N_DEV: "48"                 # 16 feedback + 32 selection, MATH-train levels 3-5
+  N_FEEDBACK: "16"
+  N_HOLDOUT: "48"
+  MAX_NEW_TOKENS: "16384"
+  PASSES_PER_ROUND: "8"
+  MAX_METRIC_CALLS: "160"
+  MAX_TURNS: "36"
+  EXTRA_SCALES: ""
+  SEED_PATCH: ""              # "published" = warm start
+  SCORE_CANDIDATES: "1"
+  HF_HOME: /tmp/hf
+  VLLM_USE_FLASHINFER_SAMPLER: "0"

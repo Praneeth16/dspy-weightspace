@@ -70,6 +70,7 @@ class HFLocalLM(BaseLM):
         top_k: int = 20,
         repetition_penalty: float = 1.0,
         batch_size: int = 16,
+        gen_backend=None,
         **kwargs: Any,
     ):
         super().__init__(model=f"hf-local/{model_name}", temperature=temperature, max_tokens=max_tokens, cache=False)
@@ -95,6 +96,8 @@ class HFLocalLM(BaseLM):
         self._base = {n: p.detach().to("cpu", copy=True) for n, p in self._params.items()}
         self._edited: set[str] = set()
         self.passes = 0
+        # Optional fast generator (vllm_backend.VLLMBackend). Weights stay authoritative here; edits are mirrored.
+        self.gen_backend = gen_backend
 
     # ----- weights ----------------------------------------------------------------------------------
     def resolve(self, name: str) -> str:
@@ -127,11 +130,15 @@ class HFLocalLM(BaseLM):
             with torch.no_grad():
                 p.copy_(t.to(device=p.device, dtype=p.dtype))
             self._edited.add(name)
+        if getattr(self, "gen_backend", None) is not None and edits:
+            self.gen_backend.set_weights({self.resolve(n): self._params[self.resolve(n)] for n in edits})
 
     def reset(self) -> None:
         with torch.no_grad():
             for name in self._edited:
                 self._params[name].copy_(self._base[name].to(self._params[name].device))
+        if getattr(self, "gen_backend", None) is not None and self._edited:
+            self.gen_backend.set_weights({n: self._base[n] for n in self._edited})
         self._edited.clear()
 
     def edited(self) -> list[str]:
@@ -163,6 +170,9 @@ class HFLocalLM(BaseLM):
         max_new_tokens = max_new_tokens or self.kwargs["max_tokens"]
         temperature = self.kwargs["temperature"] if temperature is None else temperature
         prompts = [self._render(c) for c in chats]
+        if getattr(self, "gen_backend", None) is not None:
+            self.passes += 1
+            return self.gen_backend.generate(prompts, max_new_tokens, temperature, seed)
         out: list[Completion] = []
         self.passes += 1
         for i in range(0, len(prompts), self.batch_size):

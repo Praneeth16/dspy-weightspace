@@ -27,6 +27,7 @@ from safetensors.torch import load_file, save_file
 from dspy_weightspace import HFLocalLM
 from dspy_weightspace.published_edit import BASE_REVISION, build
 from dspy_weightspace.sandbox import PatchSandbox
+from dspy_weightspace.vllm_backend import drop_stale_flash_attn
 
 E = os.environ
 VOL = E["WS_VOLUME"]
@@ -91,29 +92,6 @@ def variant_label(variant: str) -> str:
     """Result label: the variant name plus any non-default protocol or penalty, so runs never share a file."""
     label = variant.split(":", 1)[0] + (f"-{PROTOCOL}" if PROTOCOL != "think35" else "")
     return label + (f"-pp{PRESENCE:g}" if PRESENCE != 1.5 else "")
-
-
-def drop_stale_flash_attn() -> None:
-    """The image's flash-attn is compiled against its own torch; a newer vLLM brings a newer torch, and vLLM then
-    imports the stale extension (undefined symbol) for the vision tower's rotary embedding. vLLM ships its own
-    attention kernels, so the package is removed instead of rebuilt."""
-    from importlib import metadata
-
-    try:
-        dist = metadata.distribution("flash-attn")
-    except metadata.PackageNotFoundError:
-        return
-    version, root = dist.version, dist.locate_file("")
-    files = [root / f for f in dist.files or []]
-    for path in files:
-        if path.is_file():
-            path.unlink()
-    for name in ("flash_attn", "hopper"):
-        shutil.rmtree(root / name, ignore_errors=True)
-    for d in sorted({p.parent for p in files}, key=lambda d: len(d.parts), reverse=True):
-        if d.is_dir() and d != root and not any(d.iterdir()):
-            d.rmdir()  # an empty .dist-info would still register as an installed distribution
-    print(f"removed stale flash-attn {version}", flush=True)
 
 
 def evaluate(path: str, out: str) -> dict:
