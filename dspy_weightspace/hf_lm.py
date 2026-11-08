@@ -234,11 +234,13 @@ class HFLocalLM(BaseLM):
         completions: list[str] | None = None,
         max_completion_tokens: int = 1024,
         chunk: int = 4,
+        last_tokens: int | None = None,
     ):
         """Teacher-forced residual stream after each requested layer, mean over the completion tokens.
 
         Completions are truncated to `max_completion_tokens` and texts processed `chunk` at a time: eager attention
         on full-attention layers is quadratic in length, and a 24 x 4k batch exhausts a 24 GB GPU.
+        `last_tokens` averages only the final N completion tokens (where a loop, if any, has taken over).
         Returns {layer: tensor[n, hidden]} on CPU float32. One call counts as one forward pass.
         """
         self.passes += 1
@@ -258,6 +260,8 @@ class HFLocalLM(BaseLM):
                 h = out.hidden_states[layer].float()
                 for i in range(h.shape[0]):
                     begin = total - int(mask[i].sum()) + prompt_lens[start + i]
+                    if last_tokens:
+                        begin = max(begin, total - last_tokens)
                     seg = h[i, begin:] if begin < total else h[i, -1:]
                     res[layer].append(seg.mean(0).cpu())
             del out, enc

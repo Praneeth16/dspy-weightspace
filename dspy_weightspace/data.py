@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import random
+import re
 
 import dspy
 
@@ -17,7 +18,11 @@ def load_gsm8k(n_dev: int = 48, n_holdout: int = 48, seed: int = 0) -> tuple[lis
     random.Random(seed).shuffle(idx)
     rows = [ds[i] for i in idx[: n_dev + n_holdout]]
     exs = [
-        dspy.Example(problem=r["question"], answer=r["answer"].rsplit("####", 1)[-1].strip()).with_inputs("problem")
+        dspy.Example(
+            problem=r["question"],
+            answer=r["answer"].rsplit("####", 1)[-1].strip(),
+            rationale=re.sub(r"<<[^>]*>>", "", r["answer"].rsplit("####", 1)[0]).strip(),
+        ).with_inputs("problem")
         for r in rows
     ]
     return exs[:n_dev], exs[n_dev:]
