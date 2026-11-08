@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 import mlflow
 import torch
@@ -126,7 +127,11 @@ def table(rows: dict[str, dict]) -> str:
 
 def main() -> None:
     # RUN_DIR (under WS_VOLUME) reuses an earlier run's directory: finished problems in its .jsonl files are kept.
-    run_dir = f"{VOL}/{E['RUN_DIR']}" if E.get("RUN_DIR") else f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-vllm"
+    run_dir = (
+        f"{VOL}/{E['RUN_DIR']}"
+        if E.get("RUN_DIR")
+        else f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}-vllm"
+    )
     os.makedirs(run_dir, exist_ok=True)
     print(
         {

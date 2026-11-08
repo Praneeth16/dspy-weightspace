@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 
 import dspy
 import mlflow
@@ -30,7 +31,7 @@ N_DEV, N_HOLD = int(E.get("N_DEV", 48)), int(E.get("N_HOLDOUT", 48))
 # Situations from the first N_FEEDBACK dev problems give GEPA its reflection feedback; the rest select candidates.
 N_FEEDBACK = int(E.get("N_FEEDBACK", 16))
 MAX_NEW, GEPA_CALLS, SUBSET = int(E.get("MAX_NEW_TOKENS", 8192)), int(E.get("GEPA_CALLS", 40)), int(E.get("SUBSET", 8))
-RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-trackb"
+RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}-trackb"
 os.makedirs(RUN_DIR, exist_ok=True)
 print(
     {

@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 
 import mlflow
 import numpy as np
@@ -38,7 +39,7 @@ LAYER_SETS = [
 DIR_SAMPLES, SELF_SAMPLES = int(E.get("DIR_SAMPLES", 4)), int(E.get("SELF_SAMPLES", 8))
 SELF_MAX_NEW, SFT_LR = int(E.get("SELF_MAX_NEW", 8192)), float(E.get("SFT_LR", 1e-4))
 SFT_CHECKPOINTS = tuple(int(x) for x in E.get("SFT_CHECKPOINTS", "25,50,100,200").split(","))
-STAMP = f"runs/{time.strftime('%Y%m%d-%H%M%S')}-{BASELINE}"
+STAMP = f"runs/{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}-{BASELINE}"
 RUN_DIR = f"{VOL}/{STAMP}"
 os.makedirs(RUN_DIR, exist_ok=True)
 

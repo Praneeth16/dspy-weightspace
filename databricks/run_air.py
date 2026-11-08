@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import time
+import uuid
 
 import mlflow
 import torch
@@ -35,7 +36,8 @@ DATA, GEN_BACKEND = E.get("DATA", "gsm8k"), E.get("GEN_BACKEND", "hf")
 MAX_NEW, PASSES = int(E.get("MAX_NEW_TOKENS", 4096)), int(E.get("PASSES_PER_ROUND", 6))
 METRIC_CALLS, MAX_TURNS = int(E.get("MAX_METRIC_CALLS", 100)), int(E.get("MAX_TURNS", 30))
 SEED_PATCH = as_patch_script() if E.get("SEED_PATCH", "") == "published" else ""
-RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}"
+# Timestamp plus a random suffix: two jobs started in the same second once shared a dir and clobbered each other.
+RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 os.makedirs(RUN_DIR, exist_ok=True)
 print(
     {
