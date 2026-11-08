@@ -21,6 +21,7 @@ from huggingface_hub import snapshot_download
 from dspy_weightspace import HFLocalLM, load_math
 from dspy_weightspace.data import to_chat
 from dspy_weightspace.published_edit import BASE_REVISION, build
+from dspy_weightspace.vllm_backend import THINK35
 
 E = os.environ
 VOL, MAX_NEW = E["WS_VOLUME"], int(E.get("MAX_NEW_TOKENS", 16384))
@@ -31,15 +32,17 @@ ENGINE = {
     "enable_prefix_caching": False,
     "seed": 0,
 }
+# Greedy, but with the backend's other sampling settings: presence_penalty and top_k change the argmax too.
+GREEDY = {**THINK35, "temperature": 0.0}
 REF = """
 import json, os, sys
 os.environ["VLLM_ENABLE_V1_MULTIPROCESSING"] = "0"
 from dspy_weightspace.vllm_backend import drop_stale_flash_attn
 drop_stale_flash_attn()
 from vllm import LLM, SamplingParams
-model, prompts_file, out_file, engine = sys.argv[1], sys.argv[2], sys.argv[3], json.loads(sys.argv[4])
+model, prompts_file, out_file, engine, sampling = sys.argv[1], sys.argv[2], sys.argv[3], *map(json.loads, sys.argv[4:6])
 prompts = json.load(open(prompts_file))
-outs = LLM(model=model, **engine).generate(prompts, SamplingParams(temperature=0.0, max_tokens=256), use_tqdm=False)
+outs = LLM(model=model, **engine).generate(prompts, SamplingParams(max_tokens=256, **sampling), use_tqdm=False)
 json.dump([o.outputs[0].text for o in outs], open(out_file, "w"))
 """
 
@@ -71,7 +74,16 @@ json.dump(prompts, open("/tmp/smoke_prompts.json", "w"))
 refs = {}
 for label, model in (("base", base_dir), ("published", ckpt)):
     subprocess.run(
-        [sys.executable, "-c", REF, model, "/tmp/smoke_prompts.json", f"/tmp/ref_{label}.json", json.dumps(ENGINE)],
+        [
+            sys.executable,
+            "-c",
+            REF,
+            model,
+            "/tmp/smoke_prompts.json",
+            f"/tmp/ref_{label}.json",
+            json.dumps(ENGINE),
+            json.dumps(GREEDY),
+        ],
         check=True,
     )
     refs[label] = json.load(open(f"/tmp/ref_{label}.json"))
@@ -113,7 +125,8 @@ pb, pp, px = (
     agreement(patched, refs["published"])[1],
     agreement(patched, refs["base"])[1],
 )
-ok = base1 == base0 and pp >= pb - 0.15 and pp > px
+# Same sampling everywhere, so agreement should be near-total; the patched model must sit with published, not base.
+ok = base1 == base0 and pb >= 0.9 and pp >= 0.9 and px <= pp - 0.2
 print(
     "SMOKE", "PASS" if ok else "FAIL", f"(prefix agreement: base {pb:.0%}, patched {pp:.0%}, patched-vs-base {px:.0%})"
 )
