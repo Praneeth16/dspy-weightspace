@@ -55,7 +55,9 @@ class VLLMBackend:
         gpu_memory_utilization: float = 0.5,
         sampling: dict | None = None,
     ):
-        # apply_model ships a closure (holding the new tensors) to the engine process.
+        # Engine in this process: no spawned child re-importing the (unguarded) runner script, and apply_model
+        # reaches the model directly instead of pickling the new tensors across processes.
+        os.environ.setdefault("VLLM_ENABLE_V1_MULTIPROCESSING", "0")
         os.environ.setdefault("VLLM_ALLOW_INSECURE_SERIALIZATION", "1")
         drop_stale_flash_attn()
         from vllm import LLM, SamplingParams
