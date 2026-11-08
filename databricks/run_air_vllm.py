@@ -85,6 +85,29 @@ def checkpoint(base_dir: str, label: str, edits: dict[str, torch.Tensor]) -> tup
     return out, changed
 
 
+def drop_stale_flash_attn() -> None:
+    """The image's flash-attn is compiled against its own torch; a newer vLLM brings a newer torch, and vLLM then
+    imports the stale extension (undefined symbol) for the vision tower's rotary embedding. vLLM ships its own
+    attention kernels, so the package is removed instead of rebuilt."""
+    from importlib import metadata
+
+    try:
+        dist = metadata.distribution("flash-attn")
+    except metadata.PackageNotFoundError:
+        return
+    version, root = dist.version, dist.locate_file("")
+    files = [root / f for f in dist.files or []]
+    for path in files:
+        if path.is_file():
+            path.unlink()
+    for name in ("flash_attn", "hopper"):
+        shutil.rmtree(root / name, ignore_errors=True)
+    for d in sorted({p.parent for p in files}, key=lambda d: len(d.parts), reverse=True):
+        if d.is_dir() and d != root and not any(d.iterdir()):
+            d.rmdir()  # an empty .dist-info would still register as an installed distribution
+    print(f"removed stale flash-attn {version}", flush=True)
+
+
 def evaluate(path: str, out: str) -> dict:
     cmd = [sys.executable, "-m", "dspy_weightspace.vllm_eval", "--model", path, "--dataset", DATASET]
     cmd += ["--n", str(N), "--samples", str(SAMPLES), "--max-tokens", str(MAX_TOKENS), "--out", out]
@@ -127,6 +150,7 @@ def main() -> None:
             "run_dir": run_dir,
         }
     )
+    drop_stale_flash_attn()
     base_dir = snapshot_download("Qwen/Qwen3.5-0.8B", revision=BASE_REVISION)
     lm = HFLocalLM(revision=BASE_REVISION, device="cpu", dtype=torch.bfloat16)
 
