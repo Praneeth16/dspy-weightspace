@@ -36,3 +36,11 @@ def test_metric_scores_and_never_raises():
     assert not m.correct and m.score < 1.0
     broken = dspy.Prediction(text=None, finish_reason=None)
     assert math_metric(gold, broken).score <= 1.0
+
+
+def test_unfinished_thinking_gets_no_credit():
+    gold = dspy.Example(answer="42")
+    looped = dspy.Prediction(text="so \\boxed{42}. Wait, let me re-check 42", finish_reason="length", thinking=True)
+    m = math_metric(gold, looped)
+    assert not m.correct and "does not count" in m.feedback
+    assert math_metric(gold, dspy.Prediction(text="\\boxed{42}", finish_reason="stop", thinking=False)).correct

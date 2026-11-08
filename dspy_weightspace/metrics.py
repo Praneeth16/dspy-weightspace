@@ -74,7 +74,10 @@ def math_metric(gold, pred, trace=None, pred_name=None, pred_trace=None) -> dspy
 def _math_metric(gold, pred) -> dspy.Prediction:
     text = getattr(pred, "text", "") or ""
     finish = getattr(pred, "finish_reason", "stop")
-    answer = extract_answer(text)
+    provisional = extract_answer(text)
+    # As in the post's evaluate.py: with thinking on, an answer counts only once thinking has closed. Otherwise a
+    # trace cut mid-loop scores whenever a \boxed{} (or the right number) appeared somewhere in the loop.
+    answer = provisional if (not getattr(pred, "thinking", True) or "</think>" in text) else None
     correct = is_correct(answer, gold.answer)
     terminated = finish != "length"
     ratio, phrase = repetition(text)
@@ -90,9 +93,9 @@ def _math_metric(gold, pred) -> dspy.Prediction:
         fb = "Correct and terminated."
     else:
         fb = f"Terminated but wrong: extracted {answer!r}, expected {gold.answer!r}."
-    if not terminated and answer is not None:
-        match = "matches" if correct else "does not match"
-        fb += f" Provisional boxed answer seen in thinking: {answer!r} ({match} gold)."
+    if answer is None and provisional is not None:
+        match = "matches" if is_correct(provisional, gold.answer) else "does not match"
+        fb += f" Provisional answer seen in unfinished thinking: {provisional!r} ({match} gold); it does not count."
     return dspy.Prediction(
         score=score, feedback=fb, correct=correct, terminated=terminated, looping=looping, repetition_ratio=ratio
     )

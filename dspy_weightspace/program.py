@@ -30,4 +30,9 @@ class MathSolver(dspy.Module):
             temperature=temperature,
             seed=seed,
         )
-        return [dspy.Prediction(text=c.text, finish_reason=c.finish_reason, n_tokens=c.n_tokens) for c in comps]
+        return [
+            dspy.Prediction(
+                text=c.text, finish_reason=c.finish_reason, n_tokens=c.n_tokens, thinking=self.lm.enable_thinking
+            )
+            for c in comps
+        ]
