@@ -23,6 +23,8 @@ env_variables:
   DATASET: HuggingFaceH4/MATH-500
   N: "500"
   SAMPLES: "2"
-  MAX_TOKENS: "32768"
+  MAX_TOKENS: ""              # empty: the protocol budget (think35 32,768; nothink35 8,192)
+  PROTOCOL: think35
+  PRESENCE_PENALTY: "1.5"
   HF_HOME: /tmp/hf
   VLLM_USE_FLASHINFER_SAMPLER: "0"   # its JIT build needs curand.h, which the runtime image lacks

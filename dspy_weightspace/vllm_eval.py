@@ -1,4 +1,5 @@
-"""Blog-protocol evaluation with vLLM: thinking on, T=0.6, top_p 0.95, top_k 20, presence_penalty 1.5, 32,768 tokens.
+"""Blog-protocol evaluation with vLLM. --protocol think35 (default): thinking on, T=0.6, top_p 0.95, top_k 20,
+presence_penalty 1.5, 32,768 tokens. nothink35: thinking off, T=0.7, top_p 0.8, 8,192 tokens.
 
 Matches the protocol in RikiyaT/lm_understand-logs exp8_math/code/evaluate.py and the ML-Intern-lab / akhaliq
 verification (vLLM, seed 0, last \\boxed{} graded). Use on a GPU box to compare a patched checkpoint with the base
@@ -16,6 +17,12 @@ import os
 import statistics
 
 INSTRUCTION = "Please reason step by step, and put your final answer within \\boxed{}."
+# The post's evaluate.py settings for Qwen3.5-0.8B: think35 is its model card's thinking-mode setting, nothink35 the
+# non-thinking one (thinking off is the baseline an edit to the thinking loop has to beat).
+PROTOCOLS = {
+    "think35": {"thinking": True, "temperature": 0.6, "top_p": 0.95, "max_tokens": 32768},
+    "nothink35": {"thinking": False, "temperature": 0.7, "top_p": 0.8, "max_tokens": 8192},
+}
 
 
 def main() -> None:
@@ -24,10 +31,14 @@ def main() -> None:
     ap.add_argument("--dataset", default="HuggingFaceH4/MATH-500", help="or openai/gsm8k")
     ap.add_argument("--n", type=int, default=48)
     ap.add_argument("--samples", type=int, default=2)
-    ap.add_argument("--max-tokens", type=int, default=32768)
+    ap.add_argument("--protocol", choices=sorted(PROTOCOLS), default="think35")
+    ap.add_argument("--max-tokens", type=int, default=None, help="default: the protocol's")
+    ap.add_argument("--presence-penalty", type=float, default=1.5, help="1.5 in both protocols; vary as a control")
     ap.add_argument("--out", default="eval_vllm.jsonl")
     ap.add_argument("--chunk", type=int, default=0, help="problems per generate() call; 0 = all at once")
     a = ap.parse_args()
+    proto = PROTOCOLS[a.protocol]
+    max_tokens = a.max_tokens or proto["max_tokens"]
 
     from datasets import load_dataset
     from math_verify import parse, verify
@@ -47,14 +58,20 @@ def main() -> None:
             [{"role": "user", "content": f"{p}\n{INSTRUCTION}"}],
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=True,
+            enable_thinking=proto["thinking"],
         )
         for p, _ in probs
     ]
     # disable_log_stats=False: periodic throughput lines, since tqdm's carriage returns never reach batch-job logs.
-    llm = LLM(model=a.model, dtype="bfloat16", max_model_len=a.max_tokens + 2048, seed=0, disable_log_stats=False)
+    llm = LLM(model=a.model, dtype="bfloat16", max_model_len=max_tokens + 2048, seed=0, disable_log_stats=False)
     sp = SamplingParams(
-        n=a.samples, temperature=0.6, top_p=0.95, top_k=20, presence_penalty=1.5, max_tokens=a.max_tokens, seed=0
+        n=a.samples,
+        temperature=proto["temperature"],
+        top_p=proto["top_p"],
+        top_k=20,
+        presence_penalty=a.presence_penalty,
+        max_tokens=max_tokens,
+        seed=0,
     )
 
     # The file is rewritten after every chunk (UC volumes take whole-file writes, not appends) and finished problems
@@ -75,7 +92,10 @@ def main() -> None:
             for c in o.outputs:
                 text = c.text
                 # As in the post's evaluate.py: thinking that never closed gives no answer, even with a \boxed{}.
-                final = text.rsplit("</think>", 1)[-1] if "</think>" in text else ""
+                if not proto["thinking"]:
+                    final = text
+                else:
+                    final = text.rsplit("</think>", 1)[-1] if "</think>" in text else ""
                 row = {
                     "idx": i,
                     "problem": p[:200],
@@ -92,6 +112,8 @@ def main() -> None:
 
     summary = {
         "model": a.model,
+        "protocol": a.protocol,
+        "presence_penalty": a.presence_penalty,
         "generations": len(rows),
         "accuracy": statistics.mean(r["correct"] for r in rows),
         "cut_at_limit": statistics.mean(r["finish"] == "length" for r in rows),

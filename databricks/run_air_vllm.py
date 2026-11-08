@@ -4,7 +4,7 @@ Each edited variant is a copy of the base checkpoint with only the edited tensor
 architecture and config as for the base model. Each variant runs in its own process because vLLM holds GPU memory
 until exit.
 
-Env: WS_VOLUME, DATASET, N, SAMPLES, MAX_TOKENS, CHUNK, RUN_DIR, VARIANTS = comma list of
+Env: WS_VOLUME, DATASET, N, SAMPLES, MAX_TOKENS, CHUNK, RUN_DIR, PROTOCOL, PRESENCE_PENALTY, VARIANTS = comma list of
   base | published | <label>:<run dir under WS_VOLUME>   (the run dir's patch.py, replayed on its optimizer artifacts)
 """
 
@@ -32,8 +32,10 @@ E = os.environ
 VOL = E["WS_VOLUME"]
 VARIANTS = [v.strip() for v in E.get("VARIANTS", "base,published").split(",") if v.strip()]
 DATASET = E.get("DATASET", "HuggingFaceH4/MATH-500")
-N, SAMPLES, MAX_TOKENS = int(E.get("N", 500)), int(E.get("SAMPLES", 2)), int(E.get("MAX_TOKENS", 32768))
+N, SAMPLES = int(E.get("N", 500)), int(E.get("SAMPLES", 2))
+MAX_TOKENS = E.get("MAX_TOKENS", "")  # empty: the protocol's own budget
 CHUNK = int(E.get("CHUNK", 100))
+PROTOCOL, PRESENCE = E.get("PROTOCOL", "think35"), float(E.get("PRESENCE_PENALTY", 1.5))
 PUBLISHED = [
     "model.language_model.layers.15.mlp.down_proj.weight",
     "model.language_model.layers.19.mlp.down_proj.weight",
@@ -110,8 +112,10 @@ def drop_stale_flash_attn() -> None:
 
 def evaluate(path: str, out: str) -> dict:
     cmd = [sys.executable, "-m", "dspy_weightspace.vllm_eval", "--model", path, "--dataset", DATASET]
-    cmd += ["--n", str(N), "--samples", str(SAMPLES), "--max-tokens", str(MAX_TOKENS), "--out", out]
-    cmd += ["--chunk", str(CHUNK)]
+    cmd += ["--n", str(N), "--samples", str(SAMPLES), "--out", out] + (
+        ["--max-tokens", MAX_TOKENS] if MAX_TOKENS else []
+    )
+    cmd += ["--chunk", str(CHUNK), "--protocol", PROTOCOL, "--presence-penalty", str(PRESENCE)]
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, text=True)
     result = None
     for line in proc.stdout:
@@ -146,7 +150,9 @@ def main() -> None:
             "dataset": DATASET,
             "n": N,
             "samples": SAMPLES,
-            "max_tokens": MAX_TOKENS,
+            "max_tokens": MAX_TOKENS or "protocol",
+            "protocol": PROTOCOL,
+            "presence_penalty": PRESENCE,
             "run_dir": run_dir,
         }
     )
@@ -157,10 +163,19 @@ def main() -> None:
     rows: dict[str, dict] = {}
     with mlflow.start_run():
         mlflow.log_params(
-            {"variants": ",".join(VARIANTS), "dataset": DATASET, "n": N, "samples": SAMPLES, "max_tokens": MAX_TOKENS}
+            {
+                "variants": ",".join(VARIANTS),
+                "dataset": DATASET,
+                "n": N,
+                "samples": SAMPLES,
+                "max_tokens": MAX_TOKENS or "protocol",
+                "protocol": PROTOCOL,
+                "presence_penalty": PRESENCE,
+            }
         )
         for i, variant in enumerate(VARIANTS):
-            label = variant.split(":", 1)[0]
+            label = variant.split(":", 1)[0] + (f"-{PROTOCOL}" if PROTOCOL != "think35" else "")
+            label += f"-pp{PRESENCE:g}" if PRESENCE != 1.5 else ""
             t0 = time.time()
             try:
                 path, changed = checkpoint(base_dir, label, edits_for(variant, lm))
