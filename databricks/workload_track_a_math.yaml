@@ -32,6 +32,7 @@ env_variables:
   MAX_TURNS: "36"
   EXTRA_SCALES: ""
   SEED_PATCH: ""              # "published" = warm start
+  SEED: "0"                   # search seed for repeat runs; data splits do not change
   SCORE_CANDIDATES: "1"
   HF_HOME: /tmp/hf
   VLLM_USE_FLASHINFER_SAMPLER: "0"

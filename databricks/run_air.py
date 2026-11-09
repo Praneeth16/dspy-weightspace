@@ -2,8 +2,8 @@
 
 Configured by environment variables (set in workload.yaml): WS_VOLUME, REFLECTION_ENDPOINT, N_DEV, N_FEEDBACK,
 N_HOLDOUT, MAX_NEW_TOKENS, PASSES_PER_ROUND, MAX_METRIC_CALLS, MAX_TURNS, SCORE_CANDIDATES, DATA, GEN_BACKEND,
-VLLM_GPU_UTIL. Writes results.md, patch.py, candidate_curve.json and summary.json under $WS_VOLUME/runs/<timestamp>/
-and logs the run to MLflow.
+VLLM_GPU_UTIL, SEED. Writes results.md, patch.py, candidate_curve.json and summary.json under
+$WS_VOLUME/runs/<timestamp>/ and logs the run to MLflow.
 """
 
 from __future__ import annotations
@@ -35,6 +35,8 @@ SCORE_CANDIDATES = E.get("SCORE_CANDIDATES", "1") != "0"
 DATA, GEN_BACKEND = E.get("DATA", "gsm8k"), E.get("GEN_BACKEND", "hf")
 MAX_NEW, PASSES = int(E.get("MAX_NEW_TOKENS", 4096)), int(E.get("PASSES_PER_ROUND", 6))
 METRIC_CALLS, MAX_TURNS = int(E.get("MAX_METRIC_CALLS", 100)), int(E.get("MAX_TURNS", 30))
+# SEED varies only the search (GEPA sampling); the data splits stay fixed so repeat runs are comparable.
+SEED = int(E.get("SEED", 0))
 SEED_PATCH = as_patch_script() if E.get("SEED_PATCH", "") == "published" else ""
 # Timestamp plus a random suffix: two jobs started in the same second once shared a dir and clobbered each other.
 RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
@@ -50,6 +52,7 @@ print(
         "passes": PASSES,
         "metric_calls": METRIC_CALLS,
         "max_turns": MAX_TURNS,
+        "seed": SEED,
         "run_dir": RUN_DIR,
         "cuda": torch.cuda.is_available(),
     },
@@ -103,6 +106,7 @@ opt = WeightSpaceOptimizer(
     reflection_minibatch_size=8,
     max_turns=MAX_TURNS,
     seed_patch=SEED_PATCH,
+    seed=SEED,
     log_dir=f"{RUN_DIR}/optimizer",
 )
 with mlflow.start_run() as run:
@@ -119,6 +123,7 @@ with mlflow.start_run() as run:
             "passes_per_round": PASSES,
             "max_metric_calls": METRIC_CALLS,
             "max_turns": MAX_TURNS,
+            "seed": SEED,
             "seed_patch": "published" if SEED_PATCH else "none",
         }
     )
