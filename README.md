@@ -15,67 +15,91 @@ string. A weight patch is also a string: a short script that edits named tensors
 | **`WeightSpaceOptimizer`** (this repo) | sparse weight patch | LLM calls + a few forward passes | yes, patch is a diff |
 | `dspy.BootstrapFinetune` | all weights | GPU training job | no |
 
+`WeightSpaceOptimizer` is a DSPy `Teleprompter`. Its `compile()` runs the GEPA engine (`gepa.optimize`) through
+`WeightSpaceAdapter`, whose only component is a weight-patch script. It does not use `dspy.GEPA`, which evolves
+instruction text.
+
 ## Results
 
-Filled in from the Databricks run. Holdout GSM8K subset, thinking on, 4,096 new tokens max. Score (runs 1-4) = 0.4 correct + 0.3 terminated + 0.3 not looping; from run 5 on, 0.96 / 0.02 / 0.02 (accuracy first).
+MATH-500, all 500 problems, 2 samples each, thinking on, 32,768 new tokens, the original evaluation's sampling
+(T=0.6, top-p 0.95, top-k 20, presence penalty 1.5), strict grading (no closing think tag means no answer). Intervals
+are paired 95% bootstrap intervals over problems, against the published edit.
 
-| Variant | Accuracy | Looping | Cut at limit | Mean tokens | n |
-|---|---|---|---|---|---|
-| base, T=0.6 (blog sampling) | 16.7% | 62.5% | 97.9% | 4027 | 48 |
-| base, T=1.0 (Qwen model card) | 8.3% | 0.0% | 100.0% | 4096 | 48 |
-| published Experiment-8 edit (131k weights, sha256-verified) | **27.1%** | 18.8% | 89.6% | 3845 | 48 |
-| published delta x 1.6 | 20.8% | 6.2% | 89.6% | 3878 | 48 |
-| published delta x 2.4 | 20.8% | **4.2%** | **79.2%** | 3831 | 48 |
-| published delta x 3.2 | 6.2% | 14.6% | 83.3% | 3858 | 48 |
-| optimizer, cold start (Claude Sonnet 5.5, 4 rounds x 4 passes) | no edit submitted | | | | |
-| optimizer, warm start from the published edit (1 round x 6 passes): published delta x 1.9 | 16.7% | 12.5% | 81.2% | 3796 | 48 |
+| Variant | Accuracy | vs published | Tokens per correct answer |
+|---|---|---|---|
+| base | 7.1% | | 434k |
+| base, thinking off | 45.6% | -7.7 [-10.9, -4.6] | 8.3k |
+| published Experiment-8 edit (Astra) | 53.3% | | 40.5k |
+| difference-in-means direction, same placement, no LLM | 29.8% | -23.5 | 93.6k |
+| masked fine-tuning of the same 131k weights on GSM8K solutions | 47.6% | -5.7 [-9.0, -2.4] | 24.6k |
+| **this optimizer, from scratch, best of 3 seeds** | **60.6%** | **+7.3 [4.6, 10.0]** | 31.3k |
+| **this optimizer, from the published edit, best of 3 seeds** | **59.9%** | **+6.6 [3.9, 9.3]** | 29.6k |
 
-Run: Databricks AI Runtime, one A10 (24 GB), Qwen3.5-0.8B bf16, GSM8K holdout n=48, thinking on, 4,096 new tokens,
-T=0.6 / top_p 0.95 / top_k 20, seed 0. "Looping" = distinct 8-gram ratio over the tail below 0.6. One 48-problem pass took
-about 9 minutes with the reference Gated DeltaNet kernels. Transcripts, patches and summaries: [`evidence/`](evidence/).
+Search setup for the last two rows: Claude Opus 5.5 as the reflection model, 160 metric calls, MATH train problems at
+levels 3 to 5 (disjoint from MATH-500), 16,384-token selection with the test's sampling, generation in vLLM. All six
+runs:
 
-Three things the table says:
+| Run | Selection score | Held-out (48) | MATH-500 |
+|---|---|---|---|
+| from scratch, seed 0 / 1 / 2 | 0.190 / 0.296 / 0.350 | 16.7% / 29.2% / 22.9% | 32.0% / 60.6% / 40.6% |
+| from the published edit, seed 0 / 1 / 2 | 0.326 / 0.296 / 0.282 | 29.2% / 27.1% / 20.8% | 54.3% / 59.9% / 32.5% |
 
-1. **The published edit works at this budget.** Looping 62.5% to 18.8%, accuracy 16.7% to 27.1%. The decoding baseline
-   critics asked for (T=1.0) removes repetition but nothing finishes and accuracy halves. Sampling is not the fix.
-2. **Cold start found nothing it would submit.** In every round Claude built a repetition direction (difference of mean
-   residuals between repetitive and productive continuations, the blog's own method), projected it out of mid-layer
-   `down_proj` columns, measured paired on fresh problems, saw no gain, and sent an empty patch. Four passes a round
-   against the blog's fifty.
-3. **Warm start found the right knob and the metric's blind spot.** Given the published edit as the seed, Claude
-   discovered each layer's delta is rank-1, saved it as an artifact, swept the scale (1.0x, 1.6x, 2.4x, 3.2x), and
-   submitted 1.9x; GEPA accepted it (dev score 0.43 vs 0.34). On the holdout it cut looping and cut-offs further but
-   gave back the accuracy. The direct dose-response rows show why: scaling the direction kills loops monotonically up to
-   about 2.4x, while accuracy peaks at 1.0x. The 0.3/0.3 weights on termination and non-looping let the score rise as
-   accuracy fell. That is the eval gate doing its job and the metric needing a stricter one.
+What to take from it:
 
-Budget here is a small fraction of the blog's (50 passes at 32k tokens, 158 turns, 20 hours). Read the table as
-"does the loop work", not as a MATH-500 claim. The published Experiment-8 edit is rebuilt from the authors' logs and
-sha256-verified against the checkpoint they evaluated; the two rebuilt tensors are bit-identical to the ones in
-[ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming](https://huggingface.co/ML-Intern-lab/Qwen3.5-0.8B-weight-space-programming)
-(the checkpoint Hugging Face's ML Intern rebuilt and scored at 51.0% MATH-500 with the full 32k-token protocol).
-For that full protocol on a GPU box, `python -m dspy_weightspace.vllm_eval` reproduces it with vLLM (`databricks/workload_vllm.yaml` runs it on AI Runtime for base, published and the optimizer's edits). The T=1.0 row is the Qwen model-card sampling that critics said
-should have been the baseline. Both sit in the same table as the optimizer's own edit.
+1. **Run several seeds.** The same configuration scores anywhere from 32% to 61%. One run tells you little.
+2. **Choose between runs with a held-out set that the search never sees.** Across the six runs, held-out accuracy has
+   a rank correlation of 0.90 with MATH-500. The selection score that GEPA optimizes has 0.46. Within one run, every
+   child candidate did at least as well on the held-out set as its parent, so the selection score is fine for steering
+   one search. It is not fine for comparing searches. Choosing by held-out score picks 60.6% from scratch and 54.3% from the
+   published edit, where seed 0 beat seed 1 on the held-out set by one problem.
+3. **Selection data must look like the test.** Our first runs selected on short GSM8K problems and found edits that
+   scored about 15% on MATH-500.
+4. **The edits that work make the model conclude.** Every strong edit makes `</think>` and words like "So" and
+   "Therefore" 4 to 7.5 times more likely at a sentence end. Weak edits mostly make "Wait" a little less likely.
+
+The best edit from scratch removes one repetition direction from the output of every MLP and attention block in
+layers 10 to 22. The best warm edit keeps the published edit and scales four "Wait"-suppressing columns by 1.5. Our
+earlier GSM8K numbers (in `evidence/`) used a lenient grader that counted answers inside unfinished thinking. On
+MATH-500 that grader raised the base model from 8.0% to 21.6%, so do not compare them with the table above.
 
 ## How it works
 
 ```python
-from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_gsm8k, math_metric
+from dspy_weightspace import HFLocalLM, MathSolver, WeightSpaceOptimizer, load_math, math_metric
 from dspy_weightspace.reflection import databricks_lm
 
 lm = HFLocalLM("Qwen/Qwen3.5-0.8B")  # in-process, keeps a CPU copy of the original tensors
-student = MathSolver(lm, max_new_tokens=2048)
-dev, holdout = load_gsm8k(48, 48)
+student = MathSolver(lm, max_new_tokens=16384)
 
-opt = WeightSpaceOptimizer(
-    math_metric, reflection_lm=databricks_lm("databricks-claude-sonnet-5-5"), passes_per_round=8, max_metric_calls=200
-)
-optimized = opt.compile(student, trainset=dev, valset=dev)
+# Three disjoint sets. The reflection model probes and reads feedback on the first, GEPA selects on the second,
+# and you choose between runs on the third. Keep the test set out of all three.
+dev, holdout = load_math(n_dev=48, n_holdout=48)  # MATH train, levels 3 to 5
+feedback, selection = dev[:16], dev[16:]
 
+runs = []
+for seed in (0, 1, 2):
+    opt = WeightSpaceOptimizer(
+        math_metric,
+        reflection_lm=databricks_lm("databricks-claude-opus-5-5"),
+        passes_per_round=8,
+        max_metric_calls=160,
+        seed=seed,
+        log_dir=f"runs/seed{seed}",
+    )
+    runs.append(opt.compile(student, trainset=feedback, valset=selection))
+    lm.reset()
+# score each run's patch on `holdout` and keep the best
+
+optimized = runs[0]
 optimized.patch_src  # standalone script that reproduces the edit from original weights
 optimized.weights_changed  # how many entries differ
 optimized.edited_tensors  # which tensors
 ```
+
+For long traces, pass `gen_backend=VLLMBackend(model_dir)` (`dspy_weightspace/vllm_backend.py`) to `HFLocalLM`. Patches
+are copied into the vLLM engine in place, and generation is about ten times faster than Hugging Face `generate` on
+this model. `databricks/run_air.py` is the full script behind the table, including scoring each candidate on the
+held-out set after the search ends.
 
 Pieces, in `dspy_weightspace/`:
 
@@ -90,9 +114,11 @@ Pieces, in `dspy_weightspace/`:
   with one ```python, ```forward or ```patch block per turn; the patch is validated in a fresh kernel before it becomes
   a GEPA candidate.
 - `adapter.py` `WeightSpaceAdapter`: GEPA adapter whose only component is `weight_patch`.
+- `vllm_backend.py` `VLLMBackend`: fast generation for selection, with in-place weight copies and prefix caching off.
+- `steering.py`, `masked_ft.py`: the two baselines without a language model (difference-in-means direction, masked fine-tuning).
 - `optimizer.py` `WeightSpaceOptimizer`: `Teleprompter.compile()` wired to `gepa.optimize`, Pareto selection.
 - `published_edit.py`: rebuilds the Experiment-8 edit from the public `edit.npz` + `manifest.json`, sha256-checked.
-- `metrics.py`, `data.py`, `program.py`, `baseline.py`: GSM8K subset, the program under optimization, the table.
+- `metrics.py`, `data.py`, `program.py`, `baseline.py`: strict grading with math-verify, GSM8K and MATH subsets, the program under optimization, the table.
 
 ## Run it
 
@@ -117,14 +143,17 @@ Apple silicon runs the 0.8B model on MPS. The Gated DeltaNet layers fall back to
 
 - Removes obstacles, does not add skill. The blog's Gemma 3 270M follow-up, which rarely loops, got nothing. Expect the same.
 - Open weights only. Nothing here applies to a model behind an API.
-- Needs an eval gate. The blog's IFEval went 49 → 40 → 62 across 10/25/50 passes. Pareto selection over a valset is
-  the gate here; keep the holdout separate.
+- Needs an eval gate. The blog's IFEval went 49 → 40 → 62 across 10/25/50 passes. Here, results swing from 32% to
+  61% between seeds of the same search. Keep a held-out set apart from both `trainset` and `valset`.
+- One model, one failure mode (thinking loops), one test set, one reflection model, three seeds per setup.
 - "Native weight reading" at 0.8B means tool-assisted inspection in a Python kernel, as in the blog's Experiment 8.
-- HF `generate` has no presence penalty; the blog used 1.5. `repetition_penalty` is the nearest knob and is off by default.
+- HF `generate` has no presence penalty; the blog used 1.5. Use the vLLM backend, which applies it, to match the test.
 
 ## Status
 
-Prototype, 3 Nov 2026. Feature request text for `stanfordnlp/dspy` is in [`issue/`](issue/). The authors say a benchmark
-and harness are in progress; if that lands in-tree this folds into it.
+Prototype, updated 10 Nov 2026. Feature request text for `stanfordnlp/dspy` is in [`issue/`](issue/). Related work:
+Drew Breunig's [`dspy-wsp`](https://pypi.org/project/dspy-wsp/) packages weight-space programming as a DSPy optimizer
+too, and Matin Khajavi's [replication](https://github.com/MatinKhajavi/Weight-Space-Programming) reruns all eight
+experiments of the original post with Claude Opus 5.5.
 
 MIT.

@@ -25,8 +25,10 @@ Proposed shape, one rung between the two existing ones:
 ```python
 lm = HFLocalLM("Qwen/Qwen3.5-0.8B")  # in-process transformers, keeps a CPU copy of original tensors
 student = MathSolver(lm)
-opt = WeightSpaceOptimizer(metric, reflection_lm=dspy.LM("databricks/databricks-claude-..."), passes_per_round=8)
-optimized = opt.compile(student, trainset=dev, valset=dev)
+dev, holdout = load_math(n_dev=48, n_holdout=48)
+feedback, selection = dev[:16], dev[16:]  # the reflection LM reads feedback; GEPA selects; holdout picks between runs
+opt = WeightSpaceOptimizer(metric, reflection_lm=dspy.LM("databricks/databricks-claude-opus-5-5"), seed=0)
+optimized = opt.compile(student, trainset=feedback, valset=selection)
 optimized.patch_src  # standalone script that reproduces the edit from original weights
 optimized.weights_changed  # count
 ```
@@ -42,52 +44,50 @@ Pieces:
 - `WeightSpaceAdapter(GEPAAdapter)`: candidate `{"weight_patch": <script>}`; `evaluate` runs the script in a fresh
   sandbox, applies, runs the program, resets; `make_reflective_dataset` gives failing outputs + feedback.
 - `WeightPatchProposer(ProposalFn)`: the reflection LM's multi-turn session (code blocks, probe requests, final patch).
-- `WeightSpaceOptimizer(Teleprompter)`: wires the above into `gepa.optimize(...)`, Pareto selection, `max_metric_calls`.
+- `WeightSpaceOptimizer(Teleprompter)`: wires the above into `gepa.optimize(...)` (the standalone GEPA engine, not
+  `dspy.GEPA`), Pareto selection, `max_metric_calls`, `seed`.
+- `VLLMBackend`: optional fast generation for selection, with patches copied into the engine in place.
 
 Working prototype as a standalone package, with a Colab notebook (T4) and a Databricks notebook:
 https://github.com/Praneeth16/dspy-weightspace
 
-Results at notebook budget (GSM8K subset, 2k tokens, 8 passes per round), holdout n=48:
+Results on the full MATH-500 protocol (500 problems, 2 samples each, 32,768 tokens, the original evaluation's sampling,
+strict grading). Intervals are paired 95% bootstrap intervals against the published edit.
 
-| Variant | Accuracy | Looping | Cut at limit | Mean tokens | n |
-|---|---|---|---|---|---|
-| base, T=0.6 (blog sampling) | 16.7% | 62.5% | 97.9% | 4027 | 48 |
-| base, T=1.0 (Qwen model card) | 8.3% | 0.0% | 100.0% | 4096 | 48 |
-| published Experiment-8 edit (131k weights, sha256-verified) | **27.1%** | 18.8% | 89.6% | 3845 | 48 |
-| published delta x 1.6 | 20.8% | 6.2% | 89.6% | 3878 | 48 |
-| published delta x 2.4 | 20.8% | **4.2%** | **79.2%** | 3831 | 48 |
-| published delta x 3.2 | 6.2% | 14.6% | 83.3% | 3858 | 48 |
-| optimizer, cold start (Claude Sonnet 5.5, 4 rounds x 4 passes) | no edit submitted | | | | |
-| optimizer, warm start from the published edit (1 round x 6 passes): published delta x 1.9 | 16.7% | 12.5% | 81.2% | 3796 | 48 |
+| Variant | MATH-500 | vs published |
+|---|---|---|
+| base | 7.1% | |
+| base, thinking off | 45.6% | -7.7 [-10.9, -4.6] |
+| published Experiment-8 edit | 53.3% | |
+| masked fine-tuning of the same 131k weights on GSM8K solutions | 47.6% | -5.7 [-9.0, -2.4] |
+| `WeightSpaceOptimizer`, from scratch (3 seeds) | 32.0% / 60.6% / 40.6% | best +7.3 [4.6, 10.0] |
+| `WeightSpaceOptimizer`, from the published edit (3 seeds) | 54.3% / 59.9% / 32.5% | best +6.6 [3.9, 9.3] |
 
-Run: Databricks AI Runtime, one A10 (24 GB), Qwen3.5-0.8B bf16, GSM8K holdout n=48, thinking on, 4,096 new tokens,
-T=0.6 / top_p 0.95 / top_k 20, seed 0. "Looping" = distinct 8-gram ratio over the tail below 0.6. One 48-problem pass took
-about 9 minutes with the reference Gated DeltaNet kernels. Transcripts, patches and summaries: [`evidence/`](evidence/).
+Reflection model Claude Opus 5.5, 160 metric calls per run, selection on MATH train problems (levels 3 to 5) at
+16,384 tokens with the test's sampling. Full tables and scripts are in the repo.
 
-Three things the table says:
+Three findings bear on the optimizer API:
 
-1. **The published edit works at this budget.** Looping 62.5% to 18.8%, accuracy 16.7% to 27.1%. The decoding baseline
-   critics asked for (T=1.0) removes repetition but nothing finishes and accuracy halves. Sampling is not the fix.
-2. **Cold start found nothing it would submit.** In every round Claude built a repetition direction (difference of mean
-   residuals between repetitive and productive continuations, the blog's own method), projected it out of mid-layer
-   `down_proj` columns, measured paired on fresh problems, saw no gain, and sent an empty patch. Four passes a round
-   against the blog's fifty.
-3. **Warm start found the right knob and the metric's blind spot.** Given the published edit as the seed, Claude
-   discovered each layer's delta is rank-1, saved it as an artifact, swept the scale (1.0x, 1.6x, 2.4x, 3.2x), and
-   submitted 1.9x; GEPA accepted it (dev score 0.43 vs 0.34). On the holdout it cut looping and cut-offs further but
-   gave back the accuracy. The direct dose-response rows show why: scaling the direction kills loops monotonically up to
-   about 2.4x, while accuracy peaks at 1.0x. The 0.3/0.3 weights on termination and non-looping let the score rise as
-   accuracy fell. That is the eval gate doing its job and the metric needing a stricter one.
+1. **`valset` is not a held-out set.** GEPA optimizes against it, so it ranks candidates within one run well but ranks
+   separate runs poorly. Across our six runs its score has a rank correlation of 0.46 with MATH-500, while a 48-problem
+   set that the search never saw has 0.90. The docstring and the example therefore use three disjoint sets.
+2. **Seeds matter a lot.** The same configuration scores 32% to 61% on MATH-500. A `seed` argument and a documented
+   "run several, choose on held-out" pattern seem necessary for any weight-space optimizer.
+3. **Selection data must match the test.** Our first runs selected on short GSM8K problems with a metric that gave
+   0.6 of its weight to finishing and not looping. They found edits that scored about 15% on MATH-500.
 
-The published Experiment-8 edit is rebuilt from the authors' logs and sha256-verified against the evaluated checkpoint,
-so the notebook also answers the decoding-baseline question (T=1.0 per the Qwen model card) in the same table.
+Separately, `dspy.GEPA`'s default instruction proposer uses `JSONAdapter`, which sends `response_format`. Claude 5.x
+endpoints reject that with HTTP 400, so every reflection call failed in our run that used `dspy.GEPA`. Passing
+`InstructionProposer(adapter=dspy.ChatAdapter())` fixed it. Happy to file that as its own issue.
 
 ## Why in DSPy rather than only a package
 
 - `compile()` symmetry with GEPA and BootstrapFinetune; `BetterTogether` could chain prompt → patch → finetune.
-- The reflective dataset, metric shape and Pareto engine are already DSPy's. The new code is the adapter, the sandbox
-  and the local LM, about 600 lines.
+- The reflective dataset, metric shape and Pareto engine are already DSPy's. The new code is the adapter, the sandbox,
+  the probes, the proposer session and the local LM, about 1,200 lines including the optional vLLM backend.
 - The authors say a benchmark and harness are in progress. If that lands in-tree, happy to fold this into it instead.
+- Drew Breunig's [`dspy-wsp`](https://pypi.org/project/dspy-wsp/) (8 Nov 2026) is another DSPy implementation. Happy to
+  merge efforts with it; the results and the three-set split above may be the most useful part to carry over.
 
 ## Would you like to contribute?
 
