@@ -27,6 +27,8 @@ VOL = "dbfs:/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts"
 RUNS = {
     "dm-C64-9": "runs/20261108-233758-sweep/dm-C64-9",
     "cold2": "runs/20261108-202105-00c880",
+    "cold2-s1": "runs/20261109-152059-31c009",
+    "warm2-s1": "runs/20261109-152059-28844d",
 }
 DM_DIRS = "runs/20261108-124746-diffmean"
 LAYERS = (15, 19)
