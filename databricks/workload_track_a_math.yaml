@@ -33,6 +33,10 @@ env_variables:
   EXTRA_SCALES: ""
   SEED_PATCH: ""              # "published" = warm start
   SEED: "0"                   # search seed for repeat runs; data splits do not change
+  WRAPUP: "0"                 # "1" = the reflection model gets the wrap-up probe
+  SEARCH: gepa                # "independent" = N_PROPOSALS separate proposals, no GEPA loop
+  N_PROPOSALS: "4"
+  GUARD_SET: ""               # json from build_guard_set.py: problems the base model already solves
   SCORE_CANDIDATES: "1"
   HF_HOME: /tmp/hf
   VLLM_USE_FLASHINFER_SAMPLER: "0"

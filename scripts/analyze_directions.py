@@ -19,9 +19,9 @@ import torch
 
 from dspy_weightspace import HFLocalLM, load_math
 from dspy_weightspace.data import to_chat
-from dspy_weightspace.metrics import LOOP_THRESHOLD, repetition
 from dspy_weightspace.published_edit import BASE_REVISION, build
 from dspy_weightspace.sandbox import run_fresh
+from dspy_weightspace.wrapup import CLOSERS, STARTERS, boundary_mask, loop_labels, single_ids
 
 VOL = "dbfs:/Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts"
 RUNS = {
@@ -32,10 +32,8 @@ RUNS = {
 }
 DM_DIRS = "runs/20261108-124746-diffmean"
 LAYERS = (15, 19)
-STARTERS = [" Wait", "Wait", " But", " Alternatively", " Hmm", " However", " Let", " Actually"]
-CLOSERS = ["</think>", " So", " Therefore", " Thus", " Final", "**"]
 # Base traces start looping only after a few thousand tokens; 1,536 had none.
-N_TRACES, MAX_NEW, CHUNK = 12, 6144, 128
+N_TRACES, MAX_NEW = 12, 6144
 
 
 def fetch(profile: str, src: str, dest: str) -> str:
@@ -44,22 +42,19 @@ def fetch(profile: str, src: str, dest: str) -> str:
     return dest
 
 
-def single_ids(tok, words):
-    out = {}
-    for w in words:
-        ids = tok(w, add_special_tokens=False)["input_ids"]
-        if len(ids) == 1:
-            out[w] = ids[0]
-    return out
-
-
-def loop_labels(tok, ids: list[int]) -> np.ndarray:
-    """Per completion token: inside a looping stretch? Chunks of CHUNK tokens, judged on the preceding 1,024 tokens."""
-    lab = np.zeros(len(ids), dtype=bool)
-    for s in range(0, len(ids), CHUNK):
-        window = tok.decode(ids[max(0, s - 1024) : s + CHUNK])
-        lab[s : s + CHUNK] = repetition(window)[0] < LOOP_THRESHOLD
-    return lab
+def held_out_traces(lm) -> list[dict]:
+    """Base traces on MATH-train problems outside every search set; cached because generation is the slow part."""
+    cache = f"/tmp/analysis_traces_{MAX_NEW}.json"
+    if os.path.exists(cache):
+        return json.load(open(cache))
+    dev, hold = load_math(n_dev=48, n_holdout=48, seed=0)
+    used = {e.problem for e in dev + hold}
+    pool, _ = load_math(n_dev=200, n_holdout=0, seed=7)
+    probs = [e.problem for e in pool if e.problem not in used][:N_TRACES]
+    comps = lm.generate_detailed([to_chat(p) for p in probs], max_new_tokens=MAX_NEW, temperature=0.6, seed=0)
+    traces = [{"problem": p, "text": c.text} for p, c in zip(probs, comps, strict=True)]
+    json.dump(traces, open(cache, "w"))
+    return traces
 
 
 def effect(a: np.ndarray, b: np.ndarray) -> float:
@@ -106,28 +101,14 @@ def main() -> None:
             dirs[k][L] = dirs[k][L] / dirs[k][L].norm()
 
     # ----- traces --------------------------------------------------------------------------------------------
-    cache = f"/tmp/analysis_traces_{MAX_NEW}.json"
-    if os.path.exists(cache):
-        traces = json.load(open(cache))
-    else:
-        dev, hold = load_math(n_dev=48, n_holdout=48, seed=0)
-        used = {e.problem for e in dev + hold}
-        pool, _ = load_math(n_dev=200, n_holdout=0, seed=7)
-        probs = [e.problem for e in pool if e.problem not in used][:N_TRACES]
-        comps = lm.generate_detailed([to_chat(p) for p in probs], max_new_tokens=MAX_NEW, temperature=0.6, seed=0)
-        traces = [{"problem": p, "text": c.text} for p, c in zip(probs, comps, strict=True)]
-        json.dump(traces, open(cache, "w"))
+    traces = held_out_traces(lm)
     print(f"{len(traces)} traces", flush=True)
 
     rows = []  # per trace: prompt length, completion ids, loop labels, boundary flags
     for t in traces:
         p_ids = tok(lm._render(to_chat(t["problem"])), add_special_tokens=False)["input_ids"]
         c_ids = tok(t["text"], add_special_tokens=False)["input_ids"][:MAX_NEW]
-        prev = [tok.decode([i]) for i in c_ids]
-        boundary = np.array(
-            [k > 0 and prev[k - 1].rstrip(" ").endswith((".", "\n", "?", ":", "!")) for k in range(len(c_ids))]
-        )
-        rows.append({"p": p_ids, "c": c_ids, "loop": loop_labels(tok, c_ids), "boundary": boundary})
+        rows.append({"p": p_ids, "c": c_ids, "loop": loop_labels(tok, c_ids), "boundary": boundary_mask(tok, c_ids)})
     loop_all = np.concatenate([r["loop"] for r in rows])
     print(f"tokens {len(loop_all)}, looping {loop_all.mean():.0%}", flush=True)
 

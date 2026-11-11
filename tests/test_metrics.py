@@ -44,3 +44,17 @@ def test_unfinished_thinking_gets_no_credit():
     m = math_metric(gold, looped)
     assert not m.correct and "does not count" in m.feedback
     assert math_metric(gold, dspy.Prediction(text="\\boxed{42}", finish_reason="stop", thinking=False)).correct
+
+
+def test_group_scores_split_by_what_the_base_model_did():
+    from dspy_weightspace.baseline import group_scores
+
+    def row(idx, correct, finish="stop", tokens=10):
+        return {"idx": idx, "correct": correct, "finish": finish, "tokens": tokens}
+
+    base = [row(0, True), row(0, False, "length"), row(1, False, "length"), row(1, False, "length")]
+    edit = [row(0, True, tokens=4), row(0, True, tokens=6), row(1, True, tokens=20), row(1, False, "length", 30)]
+    g = group_scores(base, edit)
+    assert g["base_solved"]["problems"] == 1 and g["base_solved"]["accuracy"] == 1.0
+    assert g["base_solved"]["tokens_when_correct"] == 5
+    assert g["base_looped"]["accuracy"] == 0.5 and g["base_looped"]["cut_rate"] == 0.5

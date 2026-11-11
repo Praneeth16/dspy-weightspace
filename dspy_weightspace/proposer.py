@@ -69,7 +69,7 @@ after each requested layer (0 = embeddings) is saved as .npy, one row per item, 
  (b) {{"type": "teacher_forced", "model": "original" | "edited", "chats": [[{{"role": "user", "content": "..."}}, \
 {{"role": "assistant", "content": "..."}}], ...], "return": {{"hidden_states": [layers]}}}}: the model reads up \
 to {max_items} texts you supply (for example a repetitive vs a productive continuation) and the mean residual over \
-the assistant tokens is saved per layer.
+the assistant tokens is saved per layer.{wrapup}
 
 HOW TO WORK. Diagnose first (read failing texts: are they cut off while repeating?). Localize causally: find the \
 direction or neurons that drive the failure (for example difference of mean residuals between repetitive and \
@@ -85,6 +85,21 @@ run in a fresh kernel and becomes the candidate that is evaluated. If the eviden
 ```patch block (that means: keep the original weights). After the patch block, one paragraph: what changed, the \
 evidence, the expected effect.
 """
+
+
+# Added to SYSTEM only when the run has a wrap-up probe, so runs without one keep the earlier prompt byte for byte.
+WRAPUP_TOOL = """
+ (c) {{"type": "wrap_up", "model": "original" | "edited"}}: does NOT use the pass budget (up to {cap} calls per \
+session) and involves no sampling. It feeds fixed looping traces of the original model through the chosen weights \
+and reports what happens at sentence ends: closers_x (how many times more likely a wrap-up token such as "So", \
+"Therefore" or </think> has become; 1.0 = unchanged), starters_x (the same for "Wait", "But", "Hmm"), \
+think_close_dlogp (change in log-probability of </think>), and the mean KL divergence from the original on looping \
+tokens (kl_loop) and on productive tokens (kl_productive). In earlier searches on this model, every edit that \
+raised accuracy had closers_x between 4 and 7.5, while edits with closers_x near 1.2 barely helped even when they \
+lowered starters_x. Use it to screen and tune ideas cheaply (which layers, which matrices, what strength) before \
+spending generation passes, and keep kl_productive small: an edit that changes productive text a lot is likely to \
+damage problems the model already solves. It is a screen, not the score. Confirm the best variants with paired \
+generation."""
 
 
 def _arch(lm: HFLocalLM) -> str:
@@ -149,6 +164,7 @@ class WeightPatchProposer:
             budget=self.probes.budget,
             n_layers=len(self.lm._layers()),
             max_items=self.probes.max_items,
+            wrapup=WRAPUP_TOOL.format(cap=self.probes.wrapup_cap) if self.probes.wrapup is not None else "",
         )
 
     def _opening(self, candidate: dict[str, str], reflective: list[dict]) -> str:
@@ -171,7 +187,7 @@ class WeightPatchProposer:
 
     def __call__(self, candidate: dict[str, str], reflective_dataset, components_to_update) -> dict[str, str]:
         self.round += 1
-        self.probes.used = 0
+        self.probes.used = self.probes.wrapup_used = 0
         rdir = os.path.join(self.work_dir, f"round_{self.round:02d}")
         os.makedirs(rdir, exist_ok=True)
         self.probes.work_dir = rdir

@@ -32,3 +32,29 @@ def results_table(rows: dict[str, dict]) -> str:
         for k, v in rows.items()
     )
     return head + "\n" + body
+
+
+def group_scores(base_rows: list[dict], rows: list[dict]) -> dict[str, dict]:
+    """Score a result file separately on the problems the base model solved at least once and on the problems where
+    every base sample hit the token limit. A wrap-up edit should fix the second group without hurting the first.
+
+    Rows are vllm_eval records (idx, correct, finish, tokens), several samples per problem."""
+    by: dict[int, list[dict]] = {}
+    for r in base_rows:
+        by.setdefault(r["idx"], []).append(r)
+    groups = {
+        "base_solved": {i for i, v in by.items() if any(r["correct"] for r in v)},
+        "base_looped": {i for i, v in by.items() if all(r["finish"] == "length" for r in v)},
+    }
+    out = {}
+    for name, ids in groups.items():
+        sub = [r for r in rows if r["idx"] in ids]
+        right = [r for r in sub if r["correct"]]
+        out[name] = {
+            "problems": len(ids),
+            "accuracy": mean(float(r["correct"]) for r in sub) if sub else float("nan"),
+            "cut_rate": mean(float(r["finish"] == "length") for r in sub) if sub else float("nan"),
+            "mean_tokens": mean(r["tokens"] for r in sub) if sub else float("nan"),
+            "tokens_when_correct": mean(r["tokens"] for r in right) if right else float("nan"),
+        }
+    return out

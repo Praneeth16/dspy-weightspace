@@ -1,4 +1,7 @@
-"""Forward-pass tool with a budget, as in the blog: ``generate`` and ``teacher_forced``."""
+"""Forward-pass tool with a budget, as in the blog: ``generate`` and ``teacher_forced``.
+
+Optionally a third request, ``wrap_up``: a measurement on fixed traces that needs no generation (see wrapup.py).
+"""
 
 from __future__ import annotations
 
@@ -29,8 +32,11 @@ class Probes:
         work_dir: str,
         budget: int = 8,
         max_items: int = 32,
+        wrapup=None,
+        wrapup_cap: int = 24,
     ):
         self.lm, self.program, self.metric = lm, program, metric
+        self.wrapup, self.wrapup_cap, self.wrapup_used = wrapup, wrapup_cap, 0
         self.practice = {f"p{i:03d}": ex for i, ex in enumerate(practice)}
         self.work_dir, self.budget, self.max_items = work_dir, budget, max_items
         self.used = 0
@@ -179,6 +185,17 @@ class Probes:
             f"mean residual over assistant tokens saved: {paths} (each [n, hidden])"
         )
 
+    def wrap_up(self, req: dict) -> str:
+        """Not charged to the forward-pass budget: no generation, one teacher-forced pass per cached trace."""
+        if self.wrapup_used >= self.wrapup_cap:
+            return f"error: wrap_up limit ({self.wrapup_cap} per session) reached"
+        which = req.get("model", "edited")
+        self._set_model(which)
+        out = self.wrapup.summary()
+        self.lm.reset()
+        self.wrapup_used += 1
+        return f"wrap_up on {which} ({self.wrapup_cap - self.wrapup_used} left): {out}"
+
     def dispatch(self, req: dict) -> str:
         """Never raise into the proposer: a failed probe is reported to the model and does not cost a pass."""
         used_before = self.used
@@ -187,6 +204,8 @@ class Probes:
                 return self.generate(req)
             if req.get("type") == "teacher_forced":
                 return self.teacher_forced(req)
+            if req.get("type") == "wrap_up" and self.wrapup is not None:
+                return self.wrap_up(req)
             return "error: type must be 'generate' or 'teacher_forced'"
         except BudgetExhausted as e:
             return f"error: {e}"

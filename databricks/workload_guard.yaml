@@ -1,0 +1,27 @@
+# Builds the guard set: MATH-train problems the base model already solves (see build_guard_set.py).
+#   databricks air run --file databricks/workload_guard.yaml --profile <profile>
+experiment_name: dspy-weightspace
+mlflow_experiment_directory: /Workspace/Users/praneeth.paikray@databricks.com/dspy-weightspace
+mlflow_run_name: h100-guard-set
+compute:
+  accelerator_type: GPU_1xH100
+  num_accelerators: 1
+environment:
+  version: databricks_ai_v6
+  dependencies:
+    - git+https://github.com/Praneeth16/dspy-weightspace.git
+    - math-verify
+    - vllm==0.33.0
+code_source:
+  root_path: .
+command: python $CODE_SOURCE_PATH/build_guard_set.py
+timeout_minutes: 180
+max_retries: 0
+env_variables:
+  WS_VOLUME: /Volumes/serverless_lakebase_praneeth_catalog/weightspace/artifacts
+  VLLM_GPU_UTIL: "0.5"
+  MAX_NEW_TOKENS: "16384"
+  HF_HOME: /tmp/hf
+  VLLM_USE_FLASHINFER_SAMPLER: "0"
+  N_POOL: "500"
+  SAMPLES: "2"

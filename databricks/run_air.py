@@ -2,8 +2,8 @@
 
 Configured by environment variables (set in workload.yaml): WS_VOLUME, REFLECTION_ENDPOINT, N_DEV, N_FEEDBACK,
 N_HOLDOUT, MAX_NEW_TOKENS, PASSES_PER_ROUND, MAX_METRIC_CALLS, MAX_TURNS, SCORE_CANDIDATES, DATA, GEN_BACKEND,
-VLLM_GPU_UTIL, SEED. Writes results.md, patch.py, candidate_curve.json and summary.json under
-$WS_VOLUME/runs/<timestamp>/ and logs the run to MLflow.
+VLLM_GPU_UTIL, SEED, WRAPUP, SEARCH, N_PROPOSALS, GUARD_SET. Writes results.md, patch.py, candidate_curve.json and
+summary.json under $WS_VOLUME/runs/<timestamp>/ and logs the run to MLflow.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import os
 import time
 import uuid
 
+import dspy
 import mlflow
 import torch
 
@@ -22,6 +23,7 @@ from dspy_weightspace.baseline import results_table, score_rows
 from dspy_weightspace.published_edit import BASE_REVISION, as_patch_script, build
 from dspy_weightspace.reflection import databricks_lm
 from dspy_weightspace.sandbox import run_fresh
+from dspy_weightspace.wrapup import WrapUpProbe
 
 E = os.environ
 VOL = E["WS_VOLUME"]
@@ -38,6 +40,11 @@ METRIC_CALLS, MAX_TURNS = int(E.get("MAX_METRIC_CALLS", 100)), int(E.get("MAX_TU
 # SEED varies only the search (GEPA sampling); the data splits stay fixed so repeat runs are comparable.
 SEED = int(E.get("SEED", 0))
 SEED_PATCH = as_patch_script() if E.get("SEED_PATCH", "") == "published" else ""
+# WRAPUP=1 gives the reflection model the wrap-up probe. SEARCH=independent replaces the GEPA loop with N_PROPOSALS
+# separate proposals. GUARD_SET is a json of problems the base model already solves (build_guard_set.py): every
+# candidate is also scored there, to see whether an edit that stops loops makes the model rush.
+WRAPUP, SEARCH, N_PROPOSALS = E.get("WRAPUP", "0") == "1", E.get("SEARCH", "gepa"), int(E.get("N_PROPOSALS", 4))
+GUARD_SET = E.get("GUARD_SET", "")
 # Timestamp plus a random suffix: two jobs started in the same second once shared a dir and clobbered each other.
 RUN_DIR = f"{VOL}/runs/{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 os.makedirs(RUN_DIR, exist_ok=True)
@@ -53,6 +60,9 @@ print(
         "metric_calls": METRIC_CALLS,
         "max_turns": MAX_TURNS,
         "seed": SEED,
+        "wrapup": WRAPUP,
+        "search": SEARCH,
+        "guard_set": GUARD_SET,
         "run_dir": RUN_DIR,
         "cuda": torch.cuda.is_available(),
     },
@@ -96,6 +106,26 @@ for k in [float(x) for x in E.get("EXTRA_SCALES", "").split(",") if x.strip()]:
     lm.reset()
 print(results_table(rows), flush=True)
 
+# Looping base traces on the feedback problems: the fixed text the wrap-up probe reads. Measured for every candidate
+# in every run; only WRAPUP=1 also hands the probe to the reflection model.
+preds = prog.batch_forward([e.problem for e in feedback], seed=0)
+traces = [(e.problem, p.text) for e, p in zip(feedback, preds, strict=True) if p.finish_reason == "length"][:8]
+wrapup = WrapUpProbe(lm, traces) if traces else None
+print(f"wrap-up probe: {len(traces)} looping base traces", flush=True)
+if WRAPUP and wrapup is None:
+    raise RuntimeError("WRAPUP=1 but no base trace on the feedback problems hit the token limit")
+guard = []
+if GUARD_SET:
+    guard = [
+        dspy.Example(problem=g["problem"], answer=g["answer"]).with_inputs("problem")
+        for g in json.load(open(GUARD_SET))
+    ]
+    rows["base on the guard set"] = score_rows(prog, guard, math_metric)
+    lm.apply_patch(published)
+    rows["published edit on the guard set"] = score_rows(prog, guard, math_metric)
+    lm.reset()
+    print(results_table(rows), flush=True)
+
 reflection = databricks_lm(ENDPOINT)
 opt = WeightSpaceOptimizer(
     math_metric,
@@ -108,6 +138,9 @@ opt = WeightSpaceOptimizer(
     seed_patch=SEED_PATCH,
     seed=SEED,
     log_dir=f"{RUN_DIR}/optimizer",
+    wrapup_traces=traces if WRAPUP else None,
+    search=SEARCH,
+    n_proposals=N_PROPOSALS,
 )
 with mlflow.start_run() as run:
     mlflow.log_params(
@@ -124,6 +157,8 @@ with mlflow.start_run() as run:
             "max_metric_calls": METRIC_CALLS,
             "max_turns": MAX_TURNS,
             "seed": SEED,
+            "wrapup": WRAPUP,
+            "search": SEARCH,
             "seed_patch": "published" if SEED_PATCH else "none",
         }
     )
@@ -146,6 +181,11 @@ with mlflow.start_run() as run:
             if sb is not None:
                 sb.apply()
             r = score_rows(prog, hold, math_metric)
+            if guard:
+                g = score_rows(prog, guard, math_metric)
+                r.update(guard_accuracy=g["accuracy"], guard_cut_rate=g["cut_rate"], guard_mean_tokens=g["mean_tokens"])
+            if wrapup is not None:
+                r.update({f"wrapup_{k}": v for k, v in wrapup.measure().items()})
             lm.reset()
             curve.append({"candidate": i, "parents": res.parents[i], "selection": res.val_aggregate_scores[i], **r})
             print("candidate", curve[-1], flush=True)
