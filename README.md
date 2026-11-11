@@ -1,13 +1,16 @@
 # dspy-weightspace
 
-Weight-space programming as a DSPy optimizer. A frontier model reads a small local model's weights, probes it with a
-handful of forward passes, and writes a sparse patch. GEPA's Pareto engine decides which patch to keep. Nothing is
-trained.
+Weight-space programming as a DSPy optimizer. A frontier model reads the weights of a small local model, probes it
+with a few forward passes, and writes a patch script. GEPA decides which patches to keep. Nothing is trained.
 
-Built on the MIT CSAIL post ["Sparks of Weight-Space Programming"](https://rikiyat.github.io/blog/weight-space-programming/)
-(Takehi, Teoh, Zhang, Khattab, 2 Nov 2026), where GPT-6 Astra edited 0.016% of Qwen3.5-0.8B's weights and stopped it
-looping in its reasoning. Their loop has GEPA's shape: evaluate, reflect, propose, keep the Pareto front. GEPA mutates a
-string. A weight patch is also a string: a short script that edits named tensors. So the GEPA engine drives it unchanged.
+On Qwen3.5-0.8B, the best run of this search scores 60.6% on MATH-500, against 53.3% for the published edit. The
+worst run of the same search scores 32%, so the [results](#results) are mostly about how to tell the two apart.
+
+The idea comes from the MIT CSAIL post ["Sparks of Weight-Space Programming"](https://rikiyat.github.io/blog/weight-space-programming/)
+(Takehi, Teoh, Zhang, Khattab, 2 Nov 2026). In that post GPT-6 Astra edited 0.016% of the weights of Qwen3.5-0.8B, and
+the model stopped looping in its reasoning. The loop in the post works the way GEPA does. It evaluates, reflects,
+proposes a change and keeps the best candidates. GEPA changes a string, and a weight patch can be a string too, as a
+short script that edits named tensors. So the GEPA engine can drive the search without changes.
 
 | Optimizer | What changes | Cost | Reversible |
 |---|---|---|---|
@@ -21,46 +24,38 @@ instruction text.
 
 ## Results
 
-MATH-500, all 500 problems, 2 samples each, thinking on, 32,768 new tokens, the original evaluation's sampling
-(T=0.6, top-p 0.95, top-k 20, presence penalty 1.5), strict grading (no closing think tag means no answer). Intervals
-are paired 95% bootstrap intervals over problems, against the published edit.
+![MATH-500 accuracy of every method, with 95% intervals and one point per search seed](docs/math500.png)
 
-| Variant | Accuracy | vs published | Tokens per correct answer |
-|---|---|---|---|
-| base | 7.1% | | 434k |
-| base, thinking off | 45.6% | -7.7 [-10.9, -4.6] | 8.3k |
-| published Experiment-8 edit (Astra) | 53.3% | | 40.5k |
-| difference-in-means direction, same placement, no LLM | 29.8% | -23.5 | 93.6k |
-| masked fine-tuning of the same 131k weights on GSM8K solutions | 47.6% | -5.7 [-9.0, -2.4] | 24.6k |
-| **this optimizer, from scratch, best of 3 seeds** | **60.6%** | **+7.3 [4.6, 10.0]** | 31.3k |
-| **this optimizer, from the published edit, best of 3 seeds** | **59.9%** | **+6.6 [3.9, 9.3]** | 29.6k |
+The model is Qwen3.5-0.8B and the test is MATH-500 with the original evaluation's settings: all 500 problems, 2 samples
+each, thinking on, 32,768 new tokens, T=0.6, top-p 0.95, top-k 20 and presence penalty 1.5. Grading is strict, so a
+generation that never closes its thinking gets no answer. The search behind the green and blue points used Claude
+Opus 5.5 as the reflection model and 160 metric calls. It selected edits on MATH train problems at levels 3 to 5,
+which do not overlap with MATH-500, at 16,384 tokens with the test's sampling.
 
-Search setup for the last two rows: Claude Opus 5.5 as the reflection model, 160 metric calls, MATH train problems at
-levels 3 to 5 (disjoint from MATH-500), 16,384-token selection with the test's sampling, generation in vLLM. All six
-runs:
+What the chart shows:
 
-| Run | Selection score | Held-out (48) | MATH-500 |
-|---|---|---|---|
-| from scratch, seed 0 / 1 / 2 | 0.190 / 0.296 / 0.350 | 16.7% / 29.2% / 22.9% | 32.0% / 60.6% / 40.6% |
-| from the published edit, seed 0 / 1 / 2 | 0.326 / 0.296 / 0.282 | 29.2% / 27.1% / 20.8% | 54.3% / 59.9% / 32.5% |
-
-What to take from it:
-
-1. **Run several seeds.** The same configuration scores anywhere from 32% to 61%. One run tells you little.
-2. **Choose between runs with a held-out set that the search never sees.** Across the six runs, held-out accuracy has
-   a rank correlation of 0.90 with MATH-500. The selection score that GEPA optimizes has 0.46. Within one run, every
-   child candidate did at least as well on the held-out set as its parent, so the selection score is fine for steering
-   one search. It is not fine for comparing searches. Choosing by held-out score picks 60.6% from scratch and 54.3% from the
-   published edit, where seed 0 beat seed 1 on the held-out set by one problem.
-3. **Selection data must look like the test.** Our first runs selected on short GSM8K problems and found edits that
-   scored about 15% on MATH-500.
-4. **The edits that work make the model conclude.** Every strong edit makes `</think>` and words like "So" and
-   "Therefore" 4 to 7.5 times more likely at a sentence end. Weak edits mostly make "Wait" a little less likely.
+1. **The search can beat the published edit.** The best run from scratch scores 60.6%. That is 7.3 points above the
+   published edit (paired 95% interval 4.6 to 10.0), with 23% fewer tokens per correct answer. The best run that
+   started from the published edit scores 59.9% (+6.6, interval 3.9 to 9.3).
+2. **One run tells you little.** The same configuration scores anywhere from 32% to 61%. Three of the six runs fall
+   below the unedited model with its thinking off (45.6%).
+3. **A held-out set finds the good runs, and GEPA's own score does not.** Across the six runs, accuracy on 48 held-out
+   problems has a rank correlation of 0.90 with MATH-500. The selection score that GEPA optimizes has 0.46. Inside
+   one run the selection score works, because every child candidate did at least as well on the held-out set as its
+   parent. It fails when you compare runs. Choosing by held-out score picks the filled points, 60.6% and 54.3%.
+4. **Simpler methods fall short.** A difference-in-means direction, placed like the published edit, scores 29.8%.
+   Gradient training on the same 131k weights reaches 47.6%, and only with human-written solutions to learn from.
+5. **Selection data must look like the test.** Earlier runs selected on short GSM8K problems. Their edits scored about
+   15% on MATH-500.
+6. **The edits that work make the model conclude.** Every strong edit makes `</think>` and words like "So" 4 to 7.5
+   times more likely at a sentence end. Weak edits mostly make "Wait" a little less likely.
 
 The best edit from scratch removes one repetition direction from the output of every MLP and attention block in
-layers 10 to 22. The best warm edit keeps the published edit and scales four "Wait"-suppressing columns by 1.5. Our
-earlier GSM8K numbers (in `evidence/`) used a lenient grader that counted answers inside unfinished thinking. On
-MATH-500 that grader raised the base model from 8.0% to 21.6%, so do not compare them with the table above.
+layers 10 to 22. The best edit from the published one keeps it and scales four "Wait"-suppressing columns by 1.5.
+
+`scripts/make_readme_chart.py` draws the chart from the per-problem result files and stops if an accuracy differs from
+the recorded one. The older GSM8K numbers in `evidence/` used a lenient grader that counted answers inside unfinished
+thinking. On MATH-500 that grader raised the base model from 8.0% to 21.6%, so do not compare them with the chart.
 
 ## How it works
 
@@ -98,7 +93,7 @@ optimized.edited_tensors  # which tensors
 
 For long traces, pass `gen_backend=VLLMBackend(model_dir)` (`dspy_weightspace/vllm_backend.py`) to `HFLocalLM`. Patches
 are copied into the vLLM engine in place, and generation is about ten times faster than Hugging Face `generate` on
-this model. `databricks/run_air.py` is the full script behind the table, including scoring each candidate on the
+this model. `databricks/run_air.py` is the full script behind the chart. It also scores each candidate on the
 held-out set after the search ends.
 
 Pieces, in `dspy_weightspace/`:
@@ -151,7 +146,7 @@ Apple silicon runs the 0.8B model on MPS. The Gated DeltaNet layers fall back to
 
 ## Status
 
-Prototype, updated 10 Nov 2026. Feature request text for `stanfordnlp/dspy` is in [`issue/`](issue/). Related work:
+Prototype, updated 11 Nov 2026. Feature request text for `stanfordnlp/dspy` is in [`issue/`](issue/). Related work:
 Drew Breunig's [`dspy-wsp`](https://pypi.org/project/dspy-wsp/) packages weight-space programming as a DSPy optimizer
 too, and Matin Khajavi's [replication](https://github.com/MatinKhajavi/Weight-Space-Programming) reruns all eight
 experiments of the original post with Claude Opus 5.5.

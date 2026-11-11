@@ -40,6 +40,14 @@ EVALS = {
     "dm-all-9": ("runs/20261108-181021-vllm", "dm-all-9", 0.211),
     "cold-C64-6": ("runs/20261108-181032-vllm", "cold-C64-6", 0.182),
     "rand-C64-6": ("runs/20261108-181032-vllm", "rand-C64-6", 0.061),
+    "base-nothink35": ("runs/20261108-120505-vllm", "base-nothink35", 0.456),
+    "ft-gold": ("runs/20261108-152338-vllm", "ft-gold", 0.476),
+    "cold2": ("runs/20261108-213344-f3e6f0-vllm", "cold2", 0.320),
+    "cold-s1": ("runs/20261109-183108-dc9807-vllm", "cold-s1", 0.606),
+    "cold-s2": ("runs/20261109-183123-247aa7-vllm", "cold-s2", 0.406),
+    "warm2": ("runs/20261108-213344-2ad745-vllm", "warm2", 0.543),
+    "warm-s1": ("runs/20261109-182657-ebefd6-vllm", "warm-s1", 0.599),
+    "warm-s2": ("runs/20261109-184102-fbf676-vllm", "warm-s2", 0.325),
 }
 # label: search run dir. Repeat runs are added here once they finish.
 SEARCHES = {
