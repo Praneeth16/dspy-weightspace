@@ -48,6 +48,12 @@ EVALS = {
     "warm2": ("runs/20261108-213344-2ad745-vllm", "warm2", 0.543),
     "warm-s1": ("runs/20261109-182657-ebefd6-vllm", "warm-s1", 0.599),
     "warm-s2": ("runs/20261109-184102-fbf676-vllm", "warm-s2", 0.325),
+    # 2026-11-12: GEPA with the wrap-up probe, and independent proposals without the GEPA loop (from scratch)
+    "wrapup-s0": ("runs/20261112-104121-f0f2cc-vllm", "wrapup-s0", 0.434),
+    "wrapup-s1": ("runs/20261112-104125-d9a8e0-vllm", "wrapup-s1", 0.503),
+    "nogepa-s0": ("runs/20261112-104129-f47000-vllm", "nogepa-s0", 0.594),
+    "nogepa-s1": ("runs/20261112-105607-89ac14-vllm", "nogepa-s1", 0.366),
+    "nogepa-s2": ("runs/20261112-105619-d80454-vllm", "nogepa-s2", 0.433),
 }
 # label: search run dir. Repeat runs are added here once they finish.
 SEARCHES = {
