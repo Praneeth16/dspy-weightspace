@@ -47,6 +47,38 @@ def layer_suffix(name: str) -> str:
     return name[name.index("layers.") :]
 
 
+# vLLM stores some projections stacked row-wise in one matrix (packed_modules_mapping in its qwen3_5.py). A patch
+# that edits one part has to land in that part's rows of the stacked matrix.
+PACKED = {
+    "qkv_proj": ["q_proj", "k_proj", "v_proj"],
+    "gate_up_proj": ["gate_proj", "up_proj"],
+    "in_proj_qkvz": ["in_proj_qkv", "in_proj_z"],
+    "in_proj_ba": ["in_proj_b", "in_proj_a"],
+}
+
+
+def locate(params: dict, suffix: str, rows: int):
+    """(parameter name, row offset) in vLLM's model for a tensor the HF model calls `suffix`."""
+    hits = [k for k in params if k.endswith(suffix)]
+    if len(hits) == 1:
+        return hits[0], 0
+    module, part, leaf = suffix.rsplit(".", 2)
+    for packed, parts in PACKED.items():
+        if part not in parts:
+            continue
+        hits = [k for k in params if k.endswith(f"{module}.{packed}.{leaf}")]
+        if len(hits) != 1:
+            break
+        total, i = params[hits[0]].shape[0], parts.index(part)
+        # The first part starts at row 0 and the last ends at the last row. The only middle part is k_proj, which
+        # has as many rows as the v_proj after it.
+        offset = 0 if i == 0 else total - rows * (len(parts) - i)
+        if offset < 0 or offset + rows > total:
+            raise ValueError(f"{suffix}: {rows} rows do not fit in {hits[0]} ({total} rows)")
+        return hits[0], offset
+    raise KeyError(f"{suffix}: no matching vLLM parameter")
+
+
 class VLLMBackend:
     def __init__(
         self,
@@ -96,16 +128,16 @@ class VLLMBackend:
 
         def copy_in(model):
             params = dict(model.named_parameters())
-            done = []
+            # Find every target first: a name that cannot be placed must fail before any tensor is copied.
+            targets = []
             for suffix, t in payload.items():
-                hits = [k for k in params if k.endswith(suffix)]
-                if len(hits) != 1:
-                    raise KeyError(f"{suffix}: {len(hits)} matching vLLM parameters {hits[:3]}")
-                p = params[hits[0]]
-                if tuple(p.shape) != tuple(t.shape):
-                    raise ValueError(f"{hits[0]}: vLLM shape {tuple(p.shape)} != {tuple(t.shape)}")
-                p.data.copy_(t.to(p.device, p.dtype))
-                done.append(hits[0])
-            return done
+                name, offset = locate(params, suffix, t.shape[0])
+                target = params[name].data[offset : offset + t.shape[0]]
+                if tuple(target.shape) != tuple(t.shape):
+                    raise ValueError(f"{name}: vLLM shape {tuple(target.shape)} != {tuple(t.shape)}")
+                targets.append((name, target, t))
+            for _, target, t in targets:
+                target.copy_(t.to(target.device, target.dtype))
+            return [name for name, _, _ in targets]
 
         self.llm.apply_model(copy_in)

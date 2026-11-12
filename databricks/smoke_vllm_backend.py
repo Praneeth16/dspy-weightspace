@@ -1,9 +1,12 @@
 """AI Runtime smoke for the vLLM generation backend, before any long run relies on it.
 
-1. Reference greedy outputs for base and for the published checkpoint come from separate processes, each a fresh
-   vLLM engine with the same settings as the backend. The backend then generates base, applies the published edit
-   in place, generates, resets, generates. If in-place copies reach the model, backend-vs-reference agreement on the
-   patched model should match the agreement on base (engines can differ numerically; that sets the bar).
+1. Reference greedy outputs for base and for an edited checkpoint come from separate processes, each a fresh
+   vLLM engine with the same settings as the backend. The backend then generates base, applies the same edit in
+   place, generates, resets, generates. SMOKE_EDIT=published uses the published edit (down_proj only).
+   SMOKE_EDIT=packed perturbs the projections vLLM stores stacked in one matrix (q/k/v, gate/up and the
+   linear-attention input projections): a patch to gate_proj once failed to reach vLLM and hung a search.
+   If in-place copies reach the model, backend-vs-reference agreement on the patched model should match the
+   agreement on base (engines can differ numerically; that sets the bar).
 2. Times 32 MATH-train problems at MAX_NEW_TOKENS with the eval's sampling, to size the Track A budget.
 """
 
@@ -16,6 +19,7 @@ import subprocess
 import sys
 import time
 
+import torch
 from huggingface_hub import snapshot_download
 
 from dspy_weightspace import HFLocalLM, load_math
@@ -65,9 +69,23 @@ base_dir = snapshot_download("Qwen/Qwen3.5-0.8B", revision=BASE_REVISION)
 cpu_lm = HFLocalLM(revision=BASE_REVISION, device="cpu")
 dev, _ = load_math(n_dev=32, n_holdout=0)
 prompts = [cpu_lm._render(to_chat(e.problem)) for e in dev[:8]]
-names = [f"model.language_model.layers.{L}.mlp.down_proj.weight" for L in (15, 19)]
-published = build({n: cpu_lm.original(n) for n in names}, cache_dir=f"{VOL}/exp8_edit")
-ckpt, changed = rav.checkpoint(base_dir, "published", published)
+EDIT = E.get("SMOKE_EDIT", "published")
+if EDIT == "published":
+    names = [f"model.language_model.layers.{L}.mlp.down_proj.weight" for L in (15, 19)]
+    published = build({n: cpu_lm.original(n) for n in names}, cache_dir=f"{VOL}/exp8_edit")
+else:
+    parts = ("q_proj", "k_proj", "v_proj", "gate_proj", "up_proj", "in_proj_qkv", "in_proj_z", "in_proj_b", "in_proj_a")
+    # Layer 3 is a full-attention layer and layer 4 a linear-attention one, so every packed kind is covered.
+    names = [
+        n for n in cpu_lm.names if (".layers.3." in n or ".layers.4." in n) and any(f".{q}.weight" in n for q in parts)
+    ]
+    missing = [q for q in parts if not any(f".{q}.weight" in n for n in names)]
+    if missing:
+        raise RuntimeError(f"packed smoke: no tensor found for {missing}; names: {names}")
+    g = torch.Generator().manual_seed(0)
+    published = {n: cpu_lm.original(n) * (1 + 0.1 * torch.randn(cpu_lm.original(n).shape, generator=g)) for n in names}
+    print("packed smoke edits:", [n.split("layers.")[1] for n in names], flush=True)
+ckpt, changed = rav.checkpoint(base_dir, EDIT, published)
 del cpu_lm
 
 json.dump(prompts, open("/tmp/smoke_prompts.json", "w"))

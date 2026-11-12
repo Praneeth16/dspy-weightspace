@@ -127,3 +127,19 @@ def test_compile_without_valset_holds_out_selection_examples(tmp_path):
     )
     out = opt.compile(MathSolver(lm, max_new_tokens=64), trainset=examples(6))
     assert len(out.detailed_results.val_subscores[0]) == 4
+
+
+def test_patch_that_cannot_be_applied_uses_budget(tmp_path):
+    """A backend that refuses a patch once made GEPA retry the same evaluation until the job timed out."""
+
+    class Refusing:
+        def set_weights(self, tensors):
+            raise KeyError("layers.1.mlp.gate_proj.weight: no matching vLLM parameter")
+
+    lm = FakeLM()
+    lm.gen_backend = Refusing()
+    adapter = WeightSpaceAdapter(lm, MathSolver(lm, max_new_tokens=64), math_metric, str(tmp_path), proposer=None)
+    out = adapter.evaluate(examples(3), {COMPONENT: PATCH}, capture_traces=True)
+    assert out.scores == [0.0] * 3 and out.num_metric_calls == 3
+    assert "could not be applied" in out.trajectories[0]["feedback"]
+    assert lm.edited() == []

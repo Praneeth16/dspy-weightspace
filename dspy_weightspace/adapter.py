@@ -26,16 +26,12 @@ class WeightSpaceAdapter:
         sb, res = run_fresh(self.lm, src, self.work_dir)
         if not res.ok:
             self.lm.reset()
-            traj = [
-                {"example": ex, "prediction": None, "feedback": f"patch script failed: {res.error}"} for ex in batch
-            ]
-            return EvaluationBatch(
-                outputs=[None] * len(batch),
-                scores=[self.failure_score] * len(batch),
-                trajectories=traj if capture_traces else None,
-                num_metric_calls=len(batch),
-            )
-        sb.apply()
+            return self._failed(batch, f"patch script failed: {res.error}", capture_traces)
+        try:
+            sb.apply()
+        except Exception as e:  # noqa: BLE001
+            # Counted against the budget like any failed patch: GEPA would otherwise retry it without end.
+            return self._failed(batch, f"patch could not be applied: {type(e).__name__}: {e}", capture_traces)
         try:
             preds = self.program.batch_forward([ex.problem for ex in batch], seed=0)
         finally:
@@ -47,6 +43,15 @@ class WeightSpaceAdapter:
             traj.append({"example": ex, "prediction": pred, "feedback": m.feedback})
         return EvaluationBatch(
             outputs=preds, scores=scores, trajectories=traj if capture_traces else None, num_metric_calls=len(batch)
+        )
+
+    def _failed(self, batch, feedback: str, capture_traces: bool) -> EvaluationBatch:
+        traj = [{"example": ex, "prediction": None, "feedback": feedback} for ex in batch]
+        return EvaluationBatch(
+            outputs=[None] * len(batch),
+            scores=[self.failure_score] * len(batch),
+            trajectories=traj if capture_traces else None,
+            num_metric_calls=len(batch),
         )
 
     def make_reflective_dataset(self, candidate, eval_batch: EvaluationBatch, components_to_update):

@@ -131,7 +131,16 @@ class HFLocalLM(BaseLM):
                 p.copy_(t.to(device=p.device, dtype=p.dtype))
             self._edited.add(name)
         if getattr(self, "gen_backend", None) is not None and edits:
-            self.gen_backend.set_weights({self.resolve(n): self._params[self.resolve(n)] for n in edits})
+            try:
+                self.gen_backend.set_weights({self.resolve(n): self._params[self.resolve(n)] for n in edits})
+            except Exception:
+                # The backend copies nothing when it rejects a patch, so undo this side too. Otherwise the next
+                # reset would hit the same error and every later evaluation would fail.
+                with torch.no_grad():
+                    for name in map(self.resolve, edits):
+                        self._params[name].copy_(self._base[name].to(self._params[name].device))
+                        self._edited.discard(name)
+                raise
 
     def reset(self) -> None:
         with torch.no_grad():
