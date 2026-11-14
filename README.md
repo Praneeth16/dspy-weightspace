@@ -28,8 +28,8 @@ instruction text.
 
 The model is Qwen3.5-0.8B and the test is MATH-500 with the original evaluation's settings: all 500 problems, 2 samples
 each, thinking on, 32,768 new tokens, T=0.6, top-p 0.95, top-k 20 and presence penalty 1.5. Grading is strict, so a
-generation that never closes its thinking gets no answer. The search behind the green and blue points used Claude
-Opus 5.5 as the reflection model and 160 metric calls. It selected edits on MATH train problems at levels 3 to 5,
+generation that never closes its thinking gets no answer. The searches behind the coloured points used Claude
+Opus 5.5 as the reflection model and 160 metric calls (192 for the runs without the GEPA loop). It selected edits on MATH train problems at levels 3 to 5,
 which do not overlap with MATH-500, at 16,384 tokens with the test's sampling.
 
 What the chart shows:
@@ -37,18 +37,26 @@ What the chart shows:
 1. **The search can beat the published edit.** The best run from scratch scores 60.6%. That is 7.3 points above the
    published edit (paired 95% interval 4.6 to 10.0), with 23% fewer tokens per correct answer. The best run that
    started from the published edit scores 59.9% (+6.6, interval 3.9 to 9.3).
-2. **One run tells you little.** The same configuration scores anywhere from 32% to 61%. Three of the six runs fall
-   below the unedited model with its thinking off (45.6%).
-3. **A held-out set finds the good runs, and GEPA's own score does not.** Across the six runs, accuracy on 48 held-out
-   problems has a rank correlation of 0.90 with MATH-500. The selection score that GEPA optimizes has 0.46. Inside
-   one run the selection score works, because every child candidate did at least as well on the held-out set as its
-   parent. It fails when you compare runs. Choosing by held-out score picks the filled points, 60.6% and 54.3%.
+2. **One run tells you little.** The same configuration scores anywhere from 32% to 61%. Six of the twelve searches
+   fall below the unedited model with its thinking off (45.6%).
+3. **A held-out set ranks runs far better than GEPA's own score.** Across the twelve searches, accuracy on 48
+   held-out problems has a rank correlation of 0.77 with MATH-500. The selection score that GEPA optimizes has 0.11.
+   Inside one run the selection score works: in the first six searches, every child candidate did at least as well
+   on the held-out set as its parent. It fails when you compare runs. Choosing by held-out score picks the filled
+   points. It is not perfect. In the wrap-up group it picks a run whose edit makes the model stop too readily, so
+   32.6% of its generations finish with a wrong answer (17.9% for the published edit).
 4. **Simpler methods fall short.** A difference-in-means direction, placed like the published edit, scores 29.8%.
    Gradient training on the same 131k weights reaches 47.6%, and only with human-written solutions to learn from.
 5. **Selection data must look like the test.** Earlier runs selected on short GSM8K problems. Their edits scored about
    15% on MATH-500.
 6. **The edits that work make the model conclude.** Every strong edit makes `</think>` and words like "So" 4 to 7.5
    times more likely at a sentence end. Weak edits mostly make "Wait" a little less likely.
+7. **The GEPA loop added little here.** `search="independent"` runs four separate proposer sessions from the
+   unedited model and keeps the best on the selection set. Its three seeds score 59.4%, 36.6% and 43.3%, level with
+   GEPA's 32.0%, 60.6% and 40.6% in both mean and spread.
+8. **Telling the proposer what to aim for did not make the search reliable.** With a probe that reports how much an
+   edit raises the chance of a closing word (`wrapup_traces`), three seeds score 43.4%, 50.3% and 54.1%. The worst
+   seed rose and the best seed fell. Three seeds per setup are too few to say more.
 
 The best edit from scratch removes one repetition direction from the output of every MLP and attention block in
 layers 10 to 22. The best edit from the published one keeps it and scales four "Wait"-suppressing columns by 1.5.
