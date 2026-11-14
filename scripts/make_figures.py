@@ -51,6 +51,7 @@ EVALS = {
     # 2026-11-12: GEPA with the wrap-up probe, and independent proposals without the GEPA loop (from scratch)
     "wrapup-s0": ("runs/20261112-104121-f0f2cc-vllm", "wrapup-s0", 0.434),
     "wrapup-s1": ("runs/20261112-104125-d9a8e0-vllm", "wrapup-s1", 0.503),
+    "wrapup-s2": ("runs/20261113-113618-ced3a6-vllm", "wrapup-s2", 0.541),
     "nogepa-s0": ("runs/20261112-104129-f47000-vllm", "nogepa-s0", 0.594),
     "nogepa-s1": ("runs/20261112-105607-89ac14-vllm", "nogepa-s1", 0.366),
     "nogepa-s2": ("runs/20261112-105619-d80454-vllm", "nogepa-s2", 0.433),
